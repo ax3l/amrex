@@ -84,16 +84,8 @@ function (install_amrex)
 
    # Install Version file
    # Package version is a modified form of AMREX_GIT_VERSION
-   if (AMREX_GIT_VERSION)
-      string(FIND "${AMREX_GIT_VERSION}" "-" _idx REVERSE)
-      string(SUBSTRING "${AMREX_GIT_VERSION}" 0 "${_idx}" _pkg_version )
-      string(FIND "${_pkg_version}" "-" _idx REVERSE)
-      string(SUBSTRING "${_pkg_version}" 0 "${_idx}" _pkg_version )
-      string(REPLACE "-" "." _pkg_version "${_pkg_version}")
-   endif ()
-
    write_basic_package_version_file( ${PROJECT_BINARY_DIR}/export/AMReXConfigVersion.cmake
-      VERSION ${_pkg_version}
+      VERSION ${AMReX_VERSION}
       COMPATIBILITY AnyNewerVersion )
 
    install( FILES

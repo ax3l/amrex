@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.14)
 project(AMReX)
 enable_language(C) # needed for find_package(MPI REQUIRED "C")
 enable_language(CXX)
-enable_language(Fortran)
+if (ENABLE_FORTRAN_INTERFACES)
+  enable_language(Fortran)
+endif()
 
 #
 # Load required modules 
@@ -61,6 +63,16 @@ endif ()
 
 set ( AMREX_GIT_VERSION "${TMP}" CACHE INTERNAL "" )
 unset (TMP)
+
+set ( AMReX_VERSION "${TMP}" CACHE INTERNAL "" )
+if (AMREX_GIT_VERSION)
+  string(FIND "${AMREX_GIT_VERSION}" "-" _idx REVERSE)
+  string(SUBSTRING "${AMREX_GIT_VERSION}" 0 "${_idx}" _pkg_version )
+  string(FIND "${_pkg_version}" "-" _idx REVERSE)
+  string(SUBSTRING "${_pkg_version}" 0 "${_idx}" _pkg_version )
+  string(REPLACE "-" "." AMReX_VERSION "${_pkg_version}")
+endif ()
+
 
 # 
 # Source files for all binaries and libraries found under src
