@@ -60,9 +60,17 @@ cuda_select_nvcc_arch_flags(_nvcc_arch_flags ${CUDA_ARCH})
 #
 # Remove unsupported architecture: anything less the 6.0 must go
 #
+message(WARNING ${_nvcc_arch_flags})
 string(REPLACE "-gencode;" "-gencode " _nvcc_arch_flags "${_nvcc_arch_flags}")
+message(WARNING ${_nvcc_arch_flags})
 
 foreach (_item IN LISTS _nvcc_arch_flags)
+   if("${_item}" STREQUAL "-gencode")
+       message(WARNING "HIT GENCODE!")
+       continue()
+   else()
+       message(WARNING "HIT ITEM: ${_item}")
+   endif()
    # Match one time the regex [0-9]+.
    # [0-9]+ means any number between 0 and 9 will be matched one or more times (option +)
    string(REGEX MATCH "[0-9]+" _cuda_compute_capability "${_item}")
@@ -81,7 +89,7 @@ endif ()
 #
 # Set architecture-dependent flags
 #
-string(REPLACE ";" " " _nvcc_arch_flags "${_nvcc_arch_flags}")
+#string(REPLACE ";" " " _nvcc_arch_flags "${_nvcc_arch_flags}")
 set(NVCC_ARCH_FLAGS ${_nvcc_arch_flags} CACHE INTERNAL "CUDA architecture-dependent flags")
 unset(_nvcc_arch_flags)
 
@@ -105,9 +113,9 @@ set(NVCC_VERSION_MINOR "${_nvcc_version_minor}" CACHE INTERNAL "CUDA compiler ve
 
 # We gotta set CUDA flags globally since there is no other way at this time to pass CUDA flags to
 # device linking stage
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr --expt-extended-lambda")
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wno-deprecated-gpu-targets -m64 ${NVCC_ARCH_FLAGS}")
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -maxrregcount=${CUDA_MAXREGCOUNT}")
+#set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr --expt-extended-lambda")
+#set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wno-deprecated-gpu-targets -m64 ${NVCC_ARCH_FLAGS}")
+#set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -maxrregcount=${CUDA_MAXREGCOUNT}")
 
 if (ENABLE_CUDA_FASTMATH)
    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --use_fast_math")

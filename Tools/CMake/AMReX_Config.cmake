@@ -104,6 +104,15 @@ function (configure_amrex)
          CUDA_RESOLVE_DEVICE_SYMBOLS OFF
          )
 
+
+     target_compile_options(amrex PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>)
+     target_compile_options(amrex PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:--expt-extended-lambda>)
+     target_compile_options(amrex PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:-Wno-deprecated-gpu-targets>)
+     target_compile_options(amrex PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:-m64>)
+     #string(REPLACE " " ";" NVCC_ARCH_FLAGS_LIST "${NVCC_ARCH_FLAGS}")
+     target_compile_options(amrex PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:${NVCC_ARCH_FLAGS}>)
+     target_compile_options(amrex PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:-maxrregcount=${CUDA_MAXREGCOUNT}>)
+
       #
       # Retrieve compile flags for the current configuration
       # I haven't find a way to set host compiler flags for all the
