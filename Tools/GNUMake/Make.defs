@@ -555,13 +555,7 @@ endif
 
 ifeq ($(USE_MPI),TRUE)
     CPPFLAGS += -DBL_USE_MPI -DAMREX_USE_MPI
-
-    ifeq ($(MPI_THREAD_MULTIPLE),TRUE)
-        MPISuffix := .MTMPI
-        CPPFLAGS += -DAMREX_MPI_THREAD_MULTIPLE
-    else
-        MPISuffix := .MPI
-    endif
+    MPISuffix := .MPI
 else
     MPISuffix :=
 endif

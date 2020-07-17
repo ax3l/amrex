@@ -349,3 +349,14 @@ It should be emphasized that calling :cpp:`VisMF::Read` with an empty
 will result in a :cpp:`MultiFab` with a new :cpp:`DistributionMapping`
 that could be different from any other existing
 :cpp:`DistributionMapping` objects and is not recommended.
+
+Async I/O
+=========
+
+Asynchronous I/O can hide a significant part of the additional time an app waits for I/O running an output thread in parallel to the main application.
+It can be controlled with the following parameters:
+
+* ``amrex.async_out`` (default: 0), activate asynchronous I/O
+* ``amrex.async_out_nfiles`` (default: 64), number of output processes (and generated files)
+* ``amrex.mpi_thread_multiple`` (default: 0), required for more than 64 output processes
+

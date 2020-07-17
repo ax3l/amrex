@@ -303,16 +303,20 @@ ParallelDescriptor::StartParallel (int*    argc,
     int sflag(0);
     MPI_Initialized(&sflag);
 
+    ParmParse pp("amrex");
+    int s_asyncout = false;
+    pp.query("mpi_thread_multiple", s_mpi_thread_multiple);
+
     if ( ! sflag) {
 
-#ifdef AMREX_MPI_THREAD_MULTIPLE
-        int requested = MPI_THREAD_MULTIPLE;
-        int provided = -1;
+        if (mpi_thread_multiple) {
+            int requested = MPI_THREAD_MULTIPLE;
+            int provided = -1;
 
-        MPI_Init_thread(argc, argv, requested, &provided);
-#else // 
-        MPI_Init(argc, argv);
-#endif
+            MPI_Init_thread(argc, argv, requested, &provided);
+        } else {
+            MPI_Init(argc, argv);
+        }
 
         m_comm = MPI_COMM_WORLD;
         call_mpi_finalize = 1;
@@ -326,7 +330,7 @@ ParallelDescriptor::StartParallel (int*    argc,
     auto tfoo = MPI_Wtime();
     amrex::ignore_unused(tfoo);
 
-#ifdef AMREX_MPI_THREAD_MULTIPLE
+    if (mpi_thread_multiple)
     {
         int requested = MPI_THREAD_MULTIPLE;
         int provided = -1;
@@ -352,7 +356,6 @@ ParallelDescriptor::StartParallel (int*    argc,
             std::abort();
         }
     }
-#endif
 
     ParallelContext::push(m_comm);
 

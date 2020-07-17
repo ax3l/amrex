@@ -34,7 +34,7 @@ USE_HDF5_ASYNC = FALSE
 ABT_HOME       = $(HOME)/cori/argobots/install
 ASYNC_HOME     = $(HOME)/hdf5vol/async/src
 ifeq ($(USE_HDF5_ASYNC), TRUE)
-DEFINES   	  += -DAMREX_USE_HDF5_ASYNC -DAMREX_MPI_THREAD_MULTIPLE
+DEFINES   	  += -DAMREX_USE_HDF5_ASYNC
 INCLUDE_LOCATIONS += $(ABT_HOME)/include $(ASYNC_HOME)
 LIBRARIES 	  += -L$(ABT_HOME)/lib -L$(ASYNC_HOME) -lh5async -labt
 endif

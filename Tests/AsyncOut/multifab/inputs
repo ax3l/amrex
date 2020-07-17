@@ -5,8 +5,10 @@ nwork = 10
 nwrites = 4
 
 amrex.async_out = 1
-amrex.async_out_nfiles = 2
+amrex.async_out_nfiles = 2  # If we use more than 64 processes, async_out requires mpi_thread_multiple
+amrex.mpi_thread_multiple = 1
 
 #default value
 # amrex.async_out = 0
 # amrex.async_out_nfiles = 64
+# amrex.mpi_thread_multiple = 0

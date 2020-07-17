@@ -4,7 +4,6 @@ AMREX_HOME ?= ../../../../
 
 DEBUG        = FALSE
 USE_MPI      = FALSE
-MPI_THREAD_MULTIPLE = FALSE  # amrex.async_out=1 with more than 64 processes requires MPI_THREAD_MULTIPLE
 USE_OMP      = FALSE
 COMP         = gnu
 DIM          = 3

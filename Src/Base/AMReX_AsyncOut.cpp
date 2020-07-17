@@ -11,6 +11,7 @@ namespace AsyncOut {
 
 namespace {
 
+int s_mpi_thread_multiple = false;
 int s_asyncout = false;
 int s_noutfiles = 64;
 MPI_Comm s_comm = MPI_COMM_NULL;
@@ -26,6 +27,7 @@ void Initialize ()
     amrex::ignore_unused(s_comm,s_info);
 
     ParmParse pp("amrex");
+    pp.query("mpi_thread_multiple", s_mpi_thread_multiple);
     pp.query("async_out", s_asyncout);
     pp.query("async_out_nfiles", s_noutfiles);
 
@@ -34,14 +36,17 @@ void Initialize ()
 
     if (s_asyncout and s_noutfiles < nprocs)
     {
-#ifdef AMREX_MPI_THREAD_MULTIPLE
-        int myproc = ParallelDescriptor::MyProc();
-        s_info = GetWriteInfo(myproc);
-        MPI_Comm_split(ParallelDescriptor::Communicator(), s_info.ifile, myproc, &s_comm);
-#else
-        amrex::Abort("AsyncOut with " + std::to_string(s_noutfiles) + " and "
-                     +std::to_string(nprocs) + " processes requires MPI_THREAD_MULTIPLE");
-#endif
+        if (s_mpi_thread_multiple)
+        {
+            int myproc = ParallelDescriptor::MyProc();
+            s_info = GetWriteInfo(myproc);
+            MPI_Comm_split(ParallelDescriptor::Communicator(), s_info.ifile, myproc, &s_comm);
+        }
+        else
+        {
+            amrex::Abort("AsyncOut with " + std::to_string(s_noutfiles) + " and "
+                         +std::to_string(nprocs) + " processes requires amrex.mpi_thread_multiple");
+        }
     }
 
     if (s_asyncout) s_thread.reset(new BackgroundThread());
