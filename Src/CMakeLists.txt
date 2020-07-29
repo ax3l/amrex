@@ -8,6 +8,8 @@
 add_library( amrex )
 add_library( AMReX::amrex ALIAS amrex )
 
+set_property(TARGET amrex PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+
 #
 # Setup parallel backends (any type: inter/intra-node)
 #
