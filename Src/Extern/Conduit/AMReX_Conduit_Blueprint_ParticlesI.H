@@ -171,7 +171,7 @@ ParticleTileToBlueprint(const ParticleTile<NStructReal,
         conduit::Node &n_f = n_fields[real_comp_names[vname_real_idx]];
         n_f["topology"] = topology_name;
         n_f["association"] = "element";
-        n_f["values"].set_external(const_cast<ParticleReal*>(&soa.GetRealData(i)[0]),
+        n_f["values"].set_external(const_cast<ParticleReal*>(soa.GetRealData(i).dataPtr()),
                                    num_particles);
 
         vname_real_idx++;
@@ -183,7 +183,7 @@ ParticleTileToBlueprint(const ParticleTile<NStructReal,
         conduit::Node &n_f = n_fields[int_comp_names[vname_int_idx]];
         n_f["topology"] = topology_name;
         n_f["association"] = "element";
-        n_f["values"].set_external(const_cast<int*>(&soa.GetIntData(i)[0]),
+        n_f["values"].set_external(const_cast<int*>(soa.GetIntData(i).dataPtr()),
                                    num_particles);
 
         vname_int_idx++;
