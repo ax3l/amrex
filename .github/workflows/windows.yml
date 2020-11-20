@@ -15,3 +15,15 @@ jobs:
         cd build
         cmake .. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_VERBOSE_MAKEFILE=ON -DAMReX_BUILD_TUTORIALS=ON -DAMReX_FORTRAN=OFF -DAMReX_MPI=OFF
         cmake --build . --config Debug
+
+  tutorials_omp:
+    name: Clang C++17 w/ OMP w/o MPI w/o Fortran
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build & Install
+      run: |
+        mkdir build
+        cd build
+        cmake .. -T "ClangCl" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_VERBOSE_MAKEFILE=ON -DAMReX_BUILD_TUTORIALS=ON -DAMReX_FORTRAN=OFF -DAMReX_MPI=OFF -DAMReX_OMP=ON
+        cmake --build . --config Debug
