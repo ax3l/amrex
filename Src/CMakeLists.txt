@@ -168,6 +168,11 @@ list(FILTER AMREX_PUBLIC_HEADERS INCLUDE REGEX "\\.H")
 set_target_properties( amrex PROPERTIES PUBLIC_HEADER "${AMREX_PUBLIC_HEADERS}")
 
 #
+# Windows: Export Symbols Unix-Like
+#
+set_target_properties(amrex PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
+#
 # If AMReX_CUDA, C++ files will be compiled as CUDA sources
 #
 if (AMReX_CUDA)
