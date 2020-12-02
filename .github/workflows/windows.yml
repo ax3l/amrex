@@ -23,7 +23,7 @@ jobs:
 
   # Build libamrex and all tutorials
   tutorials_clang:
-    name: Clang C++17 w/o Fortran w/o MPI
+    name: Clang C++17 w/ OMP w/o Fortran w/o MPI
     runs-on: windows-2019
     steps:
     - uses: actions/checkout@v2
@@ -41,5 +41,6 @@ jobs:
               -DAMReX_BUILD_TUTORIALS=ON    ^
               -DAMReX_FORTRAN=OFF           ^
               -DAMReX_MPI=OFF               ^
+              -DAMReX_OMP=ON                ^
               -DAMReX_PARTICLES=ON
         cmake --build build --config Release -j 2
