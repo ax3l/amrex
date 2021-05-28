@@ -12,11 +12,7 @@ sudo apt-get install -y \
     ca-certificates     \
     cmake               \
     environment-modules \
-    g++                 \
-    gfortran            \
     gnupg               \
-    libopenmpi-dev      \
-    openmpi-bin         \
     pkg-config          \
     wget
 
