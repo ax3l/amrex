@@ -243,18 +243,18 @@ jobs:
 
         cmake --build build -j 2
 
-  # Build libamrex and all tests with NVHPC 8 (recent supported)
-  tests-nvhpc21-3:
-    name: NVHPC@21.3 C++17 Release [tests]
+  # Build libamrex and all tests with NVHPC (recent supported)
+  tests-nvhpc21-5-nvcc:
+    name: NVHPC@21.5 NVCC/NVC++ C++17 Release [tests]
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v2
     - name: Dependencies
-      run: .github/workflows/dependencies/dependencies_nvhpc21-3.sh
+      run: .github/workflows/dependencies/dependencies_nvhpc21-5.sh
     - name: Build & Install
       run: |
         source /etc/profile.d/modules.sh
-        module load /opt/nvidia/hpc_sdk/modulefiles/nvhpc/21.3
+        module load /opt/nvidia/hpc_sdk/modulefiles/nvhpc/21.5
 
         which nvcc || echo "nvcc not in PATH!"
         which nvc++ || echo "nvc++ not in PATH!"
