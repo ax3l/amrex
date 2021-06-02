@@ -274,6 +274,7 @@ jobs:
             -DAMReX_GPU_BACKEND=CUDA                     \
             -DCMAKE_C_COMPILER=$(which nvc)              \
             -DCMAKE_CXX_COMPILER=$(which nvc++)          \
+            -DCMAKE_CUDA_COMPILER=$(which nvc++)         \
             -DCMAKE_CUDA_HOST_COMPILER=$(which nvc++)    \
             -DCMAKE_Fortran_COMPILER=$(which nvfortran)  \
             -DCMAKE_CUDA_STANDARD=17                     \
