@@ -22,16 +22,43 @@ jobs:
         cmake ..                                           \
             -DCMAKE_VERBOSE_MAKEFILE=ON                    \
             -DAMReX_ENABLE_TESTS=ON                        \
-            -DAMReX_FORTRAN=OFF                            \
+            -DAMReX_FORTRAN=ON                             \
             -DAMReX_PARTICLES=ON                           \
             -DAMReX_GPU_BACKEND=CUDA                       \
             -DCMAKE_C_COMPILER=$(which gcc-6)              \
             -DCMAKE_CXX_COMPILER=$(which g++-6)            \
             -DCMAKE_CUDA_HOST_COMPILER=$(which g++-6)      \
             -DCMAKE_Fortran_COMPILER=$(which gfortran-6)   \
-            -DAMReX_CUDA_ARCH=6.0 \
+            -DAMReX_CUDA_ARCH=6.0                          \
             -DAMReX_CUDA_ERROR_CROSS_EXECUTION_SPACE_CALL=ON
         make -j 2
+
+  tests-cuda9:
+    name: ClangCUDA@9.2 Clang@... C++14 Release [tests]
+    runs-on: ubuntu-18.04
+    env: {CXXFLAGS: "-fno-operator-names"}
+    steps:
+    - uses: actions/checkout@v2
+    - name: Dependencies
+      run: .github/workflows/dependencies/dependencies_clangcuda.sh
+    - name: Build & Install
+      run: |
+        export PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:${PATH}
+        export LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
+        which nvcc || echo "nvcc not in PATH!"
+
+        cmake -S . -B build                                \
+            -DCMAKE_VERBOSE_MAKEFILE=ON                    \
+            -DAMReX_ENABLE_TESTS=ON                        \
+            -DAMReX_FORTRAN=OFF                            \
+            -DAMReX_PARTICLES=ON                           \
+            -DAMReX_GPU_BACKEND=CUDA                       \
+            -DCMAKE_C_COMPILER=$(which clang)              \
+            -DCMAKE_CXX_COMPILER=$(which clang++)          \
+            -DCMAKE_CUDA_COMPILER=$(which clang++)         \
+            -DCMAKE_CUDA_HOST_COMPILER=$(which clang++)    \
+            -DAMReX_CUDA_ARCH=6.0
+        cmake --build build -j 2
 
   # Build libamrex and all tests with CUDA 11.0.2 (recent supported)
   tests-cuda11:

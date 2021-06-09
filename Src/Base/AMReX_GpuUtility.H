@@ -26,7 +26,7 @@ namespace Gpu {
     template <typename T>
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     T LDG (Array4<T> const& a, int i, int j, int k) noexcept {
-#ifdef __CUDA_ARCH__
+#if defined(__CUDA_ARCH__) && !(defined(__clang__) && defined(__CUDA__))
         return __ldg(a.ptr(i,j,k,n));
 #else
         return a(i,j,k);
@@ -36,7 +36,7 @@ namespace Gpu {
     template <typename T>
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     T LDG (Array4<T> const& a, int i, int j, int k, int n) noexcept {
-#ifdef __CUDA_ARCH__
+#if defined(__CUDA_ARCH__) && !(defined(__clang__) && defined(__CUDA__))
         return __ldg(a.ptr(i,j,k,n));
 #else
         return a(i,j,k,n);

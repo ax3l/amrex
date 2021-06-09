@@ -83,12 +83,12 @@ namespace amrex
 #if defined(AMREX_USE_CUDA)
 
     template <class T>
-    struct MaybeHostDeviceRunnable<T, std::enable_if_t<__nv_is_extended_device_lambda_closure_type(T)> >
-        : std::false_type {};
+    struct MaybeHostDeviceRunnable<T >
+        : std::true_type {};
 
     template <class T>
-    struct DefinitelyNotHostRunnable<T, std::enable_if_t<__nv_is_extended_device_lambda_closure_type(T)> >
-        : std::true_type {};
+    struct DefinitelyNotHostRunnable<T >
+        : std::false_type {};
 
 #elif defined(AMREX_USE_HIP)
 
