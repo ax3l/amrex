@@ -21,8 +21,8 @@ class MLCellLinOpT  // NOLINT(cppcoreguidelines-virtual-class-destructor)
 {
 public:
 
-    using FAB = typename MF::fab_type;
-    using RT  = typename MF::value_type;
+    using FAB = typename FabDataType<MF>::fab_type;
+    using RT  = typename FabDataType<MF>::value_type;
 
     using BCType = LinOpBCType;
     using BCMode    = typename MLLinOpT<MF>::BCMode;
