@@ -2056,7 +2056,7 @@ BaseFab<T>::norminfmask (const Box& subbox, const BaseFab<int>& mask,
             Real t = 0.0;
             if (m(i,j,k)) {
                 for (int n = 0; n < ncomp; ++n) {
-                    t = amrex::max(t,static_cast<Real>(std::abs(a(i,j,k,n+scomp))));
+                    t = amrex::max(t,static_cast<Real>(amrex::Math::abs(a(i,j,k,n+scomp))));
                 }
             }
             return {t};
@@ -2105,7 +2105,7 @@ BaseFab<T>::norm (const Box& subbox, int p, int comp, int numcomp) const
             {
                 Real t = 0.0;
                 for (int n = 0; n < numcomp; ++n) {
-                    t = amrex::max(t, static_cast<Real>(std::abs(a(i,j,k,n+comp))));
+                    t = amrex::max(t, static_cast<Real>(amrex::Math::abs(a(i,j,k,n+comp))));
                 }
                 return {t};
             });
@@ -2120,7 +2120,7 @@ BaseFab<T>::norm (const Box& subbox, int p, int comp, int numcomp) const
             {
                 Real t = 0.0;
                 for (int n = 0; n < numcomp; ++n) {
-                    t += static_cast<Real>(std::abs(a(i,j,k,n+comp)));
+                    t += static_cast<Real>(amrex::Math::abs(a(i,j,k,n+comp)));
                 }
                 return {t};
             });

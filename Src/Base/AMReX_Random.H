@@ -310,7 +310,7 @@ namespace amrex
 
         Real x, v, u;
         Real d = alpha - 1.0_rt / 3.0_rt;
-        Real c = (1.0_rt / 3.0_rt) / std::sqrt(d);
+        Real c = (1.0_rt / 3.0_rt) / amrex::Math::sqrt(d);
 
         while (true) {
             do {
@@ -325,7 +325,7 @@ namespace amrex
                 break;
             }
 
-            if (std::log(u) < 0.5_rt * x * x + d * (1.0_rt - v + std::log(v))) {
+            if (amrex::Math::log(u) < 0.5_rt * x * x + d * (1.0_rt - v + amrex::Math::log(v))) {
                 break;
             }
         }
@@ -359,7 +359,7 @@ namespace amrex
         if (alpha < 1)
         {
             Real u = amrex::RandomPositive(random_engine); // std::pow(u, 1/alpha) below
-            return amrex::random_util::RandomGamma_alpha_ge_1(1.0_rt + alpha, beta, random_engine) * std::pow(u, 1.0_rt / alpha);
+            return amrex::random_util::RandomGamma_alpha_ge_1(1.0_rt + alpha, beta, random_engine) * amrex::Math::pow(u, 1.0_rt / alpha);
         } else {
             return amrex::random_util::RandomGamma_alpha_ge_1(alpha, beta, random_engine);
         }
