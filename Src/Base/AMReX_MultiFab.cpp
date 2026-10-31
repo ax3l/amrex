@@ -1106,13 +1106,15 @@ indexFromValue (MultiFab const& mf, int comp, int nghost, Real value, MPI_Op mml
     const int NProcs = ParallelContext::NProcsSub();
     if (NProcs > 1)
     {
+        // MPI has no pair type for cuda::fp32mp2; compare its value as double
+        using MMType = std::conditional_t<IsFPMP2_v<Real>, double, Real>;
         struct {
-            Real mm;
+            MMType mm;
             int rank;
         } in, out;
-        in.mm = value;
+        in.mm = static_cast<MMType>(value);
         in.rank = ParallelContext::MyProcSub();
-        MPI_Datatype datatype = (sizeof(Real) == sizeof(double))
+        MPI_Datatype datatype = (sizeof(MMType) == sizeof(double))
             ? MPI_DOUBLE_INT : MPI_FLOAT_INT;
         MPI_Comm comm = ParallelContext::CommunicatorSub();
         MPI_Allreduce(&in,  &out, 1, datatype, mmloc, comm);
@@ -1268,7 +1270,7 @@ MultiFab::norm2 (int comp, const Periodicity& period) const
 #endif
 
     ParallelAllReduce::Sum(nm2, ParallelContext::CommunicatorSub());
-    return std::sqrt(nm2);
+    return amrex::Math::sqrt(nm2);
 }
 
 Vector<Real>
@@ -1348,7 +1350,7 @@ MultiFab::norm1 (int comp, int ngrow, bool local) const
         nm1 = ParReduce(TypeList<ReduceOpSum>{}, TypeList<Real>{}, *this, IntVect(ngrow),
         [=] AMREX_GPU_DEVICE (int box_no, int i, int j, int k) noexcept -> GpuTuple<Real>
         {
-            return std::abs(ma[box_no](i,j,k,comp));
+            return amrex::Math::abs(ma[box_no](i,j,k,comp));
         });
     }
 #ifdef AMREX_USE_GPU
@@ -1361,7 +1363,7 @@ MultiFab::norm1 (int comp, int ngrow, bool local) const
             auto const& a = this->const_array(mfi);
             AMREX_LOOP_3D(bx, i, j, k,
             {
-                nm1 += std::abs(a(i,j,k,comp));
+                nm1 += amrex::Math::abs(a(i,j,k,comp));
             });
         }
     }
@@ -1395,7 +1397,7 @@ MultiFab::norm1 (const Vector<int>& comps, int ngrow, bool local) const
         nm1 = ParReducePerComp(TypeList<ReduceOpSum>{}, TypeList<Real>{}, *this, IntVect(ngrow), n,
         [=] AMREX_GPU_DEVICE (int box_no, int i, int j, int k, int m) noexcept -> GpuTuple<Real>
         {
-            return std::abs(ma[box_no](i,j,k,pcomps[m]));
+            return amrex::Math::abs(ma[box_no](i,j,k,pcomps[m]));
         });
     }
     else

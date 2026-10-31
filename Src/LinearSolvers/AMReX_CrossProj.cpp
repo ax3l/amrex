@@ -329,7 +329,7 @@ void bottom_solve (CrossProj::Level& L)
     auto invert = [] (Vector<Real>& v, Real scale) {
         constexpr Real tol = std::is_same_v<Real,float> ? Real(1.e-4) : Real(1.e-10);
         Real smax = Real(0.0);
-        for (auto x : v) { smax = std::max(smax, std::abs(x)); }
+        for (auto x : v) { smax = std::max(smax, amrex::Math::abs(x)); }
         for (auto& x : v) {
             x = (std::abs(x) > tol*smax) ? scale/x : Real(0.0);
         }
