@@ -34,6 +34,12 @@
 #  elif CCCL_FPMP_EXPLICIT_CASTS != 0
 #    error "AMReX_PRECISION=FP32MP2 requires CCCL_FPMP_EXPLICIT_CASTS=0: compile with -DCCCL_FPMP_EXPLICIT_CASTS=0, or include AMReX headers before <cuda/fpmp>"
 #  endif
+// The pair arithmetic relies on IEEE rounding of each float operation. Host
+// fast-math lets the compiler reassociate it, which silently reduces the pairs
+// to float accuracy. nvcc's --use_fast_math does not define these macros.
+#  if defined(__FAST_MATH__) || defined(_M_FP_FAST)
+#    error "AMReX_PRECISION=FP32MP2 cannot be compiled with host fast-math (-ffast-math, -Ofast, /fp:fast): it reduces cuda::fp32mp2 to float accuracy"
+#  endif
 #  include <cuda/fpmp>
 #  include <iosfwd>
 #  include <limits>

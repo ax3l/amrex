@@ -671,9 +671,14 @@ The following applies in this mode:
   ``AMReX_EB``, ``AMReX_FFT``, ``AMReX_HYPRE``, ``AMReX_PETSC``,
   ``AMReX_SUNDIALS``, ``AMReX_HDF5``, ``AMReX_CONDUIT``, ``AMReX_ASCENT``,
   ``AMReX_CATALYST``, ``AMReX_SENSEI``, ``AMReX_SIMD``, ``AMReX_FASTMATH``
-  (``-ffast-math`` breaks the pair arithmetic) and the basic, trace and
+  (``-ffast-math`` breaks the pair arithmetic; AMReX headers also stop with
+  an error if it is set in other ways) and the basic, trace and
   communication profilers.  ``AMReX_TINY_PROFILE`` can be used.
-  ``AMReX_CUDA_FASTMATH`` does not affect the results.
+* ``AMReX_CUDA_FASTMATH`` (on by default) gives the same results on the GPU
+  for magnitudes above about :math:`2^{-100}` (:math:`10^{-30}`).  Below
+  that, it flushes the low float of the pair to zero, which reduces the
+  accuracy to that of ``float``, and values below :math:`2^{-126}`
+  (``FLT_MIN``) become zero.  Turn it off if your data has such values.
 * Plotfiles and checkpoint files store real data as IEEE double precision,
   so they can be read by the usual tools.  A restart reproduces each value
   to double precision, which exceeds the 46-bit precision of the pair, but
@@ -703,9 +708,15 @@ The following applies in this mode:
   ``std::numeric_limits<amrex::Real>`` is available.
 * Values can be written with ``<<``.  For reading with ``>>`` outside of
   namespace ``amrex``, add ``using amrex::operator>>;``.
+* A store of the pair is not a single atomic operation.  On GPUs,
+  ``FabArray::BuildMask`` and ``FabArray::setVal`` with communication
+  metadata abort for :cpp:`amrex::Real` data if the target cells overlap;
+  use them with integer masks (``iMultiFab``), as AMReX does.
 * In CCCL 3.6, converting a ``cuda::fp32mp2`` with a magnitude of
   :math:`2^{24}` or more to an integer type can be off by one.  For such
-  values, apply ``amrex::Math::floor`` first and convert the result.
+  values, round first and convert the result, e.g., with
+  ``amrex::Math::trunc``, which keeps the rounding toward zero of the
+  conversion.
 
 CMake and macOS
 ---------------

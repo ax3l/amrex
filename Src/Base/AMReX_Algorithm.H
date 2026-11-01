@@ -42,7 +42,7 @@ namespace amrex
     AMREX_GPU_HOST_DEVICE
     AMREX_FORCE_INLINE constexpr T min (const T& a, const T& b, const Ts& ... c) noexcept
     {
-        return amrex::min(amrex::min(a,b),c...);
+        return min(min(a,b),c...);
     }
 
     /// \ingroup amrex_utilities
@@ -65,7 +65,7 @@ namespace amrex
     AMREX_GPU_HOST_DEVICE
     AMREX_FORCE_INLINE constexpr T max (const T& a, const T& b, const Ts& ... c) noexcept
     {
-        return amrex::max(amrex::max(a,b),c...);
+        return max(max(a,b),c...);
     }
 
     /// \ingroup amrex_utilities

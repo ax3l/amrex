@@ -1214,7 +1214,7 @@ MultiFab::norm2 (int comp) const
     BL_ASSERT(ixType().cellCentered());
 
     Real nm2 = MultiFab::Dot(*this, comp, 1, 0);
-    nm2 = std::sqrt(nm2);
+    nm2 = amrex::Math::sqrt(nm2);
     return nm2;
 }
 
@@ -1224,7 +1224,7 @@ MultiFab::norm2 (int comp, int numcomp) const
     BL_ASSERT(ixType().cellCentered());
 
     Real nm2 = MultiFab::Dot(*this, comp, numcomp, 0);
-    nm2 = std::sqrt(nm2);
+    nm2 = amrex::Math::sqrt(nm2);
     return nm2;
 }
 
@@ -1308,7 +1308,7 @@ MultiFab::norm2 (const Vector<int>& comps) const
     }
 
     ParallelAllReduce::Sum(nm2.dataPtr(), n, ParallelContext::CommunicatorSub());
-    for (auto& x : nm2) { x = std::sqrt(x); }
+    for (auto& x : nm2) { x = amrex::Math::sqrt(x); }
 
     return nm2;
 }

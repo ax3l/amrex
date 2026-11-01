@@ -336,7 +336,7 @@ public:
             Real theta_r = geomdata.ProbLo()[1] + static_cast<Real>(point[1]+1) * dx[1];
 
             const Real twoThirdsPi = static_cast<Real>((2.0 / 3.0) * amrex::Math::pi<Real>());
-            vol = twoThirdsPi * (std::cos(theta_l) - std::cos(theta_r)) * dx[0] *
+            vol = twoThirdsPi * (amrex::Math::cos(theta_l) - amrex::Math::cos(theta_r)) * dx[0] *
                 (r_r*r_r + r_r*r_l + r_l*r_l);
         }
 

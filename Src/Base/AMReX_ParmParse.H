@@ -43,8 +43,9 @@ namespace ppdetail {
     template <class T, class Enable = void>
     struct ArithmeticOptional_TT : std::false_type {};
 
+    // amrex::Real is cuda::fp32mp2, not an arithmetic type, with AMReX_PRECISION=FP32MP2.
     template <class T>
-    requires (std::is_arithmetic_v<T>)
+    requires (std::is_arithmetic_v<T> || IsFPMP2_v<T>)
     struct ArithmeticOptional_TT<T>
         : std::true_type
     {
@@ -52,7 +53,7 @@ namespace ppdetail {
     };
 
     template <class T>
-    requires (std::is_arithmetic_v<T>)
+    requires (std::is_arithmetic_v<T> || IsFPMP2_v<T>)
     struct ArithmeticOptional_TT<std::optional<T>>
         : std::true_type
     {
@@ -1595,8 +1596,8 @@ public:
      * during parsing.
      *
      * The final result is cast to T. It may result in a runtime error if
-     * the conversion is not safe. T is either arithmetic type or
-     * std::optional of arithmetic type.
+     * the conversion is not safe. T is an arithmetic type or amrex::Real,
+     * or std::optional of one of those.
      */
     template <typename T>
     requires (ppdetail::IsArithmeticOptional_v<T>)
@@ -1628,8 +1629,8 @@ public:
      * precision during parsing.
      *
      * The final result is cast to T's. It may result in a runtime error if
-     * the conversion is not safe. T is either arithmetic type or
-     * std::optional of arithmetic type.
+     * the conversion is not safe. T is an arithmetic type or amrex::Real,
+     * or std::optional of one of those.
      */
     template <typename T>
     requires (ppdetail::IsArithmeticOptional_v<T>)
@@ -1662,8 +1663,8 @@ public:
      * during parsing.
      *
      * The final result is cast to T. It may result in a runtime error if
-     * the conversion is not safe. T is either arithmetic type or
-     * std::optional of arithmetic type.
+     * the conversion is not safe. T is an arithmetic type or amrex::Real,
+     * or std::optional of one of those.
      */
     template <typename T>
     requires (ppdetail::IsArithmeticOptional_v<T>)
@@ -1680,8 +1681,8 @@ public:
      * precision during parsing.
      *
      * The final result is cast to T's. It may result in a runtime error if
-     * the conversion is not safe. T is either arithmetic type or
-     * std::optional of arithmetic type.
+     * the conversion is not safe. T is an arithmetic type or amrex::Real,
+     * or std::optional of one of those.
      */
     template <typename T>
     requires (ppdetail::IsArithmeticOptional_v<T>)
