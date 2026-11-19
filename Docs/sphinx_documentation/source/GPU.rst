@@ -134,6 +134,10 @@ Building with GNU Make
 To build AMReX with GPU support, add ``USE_CUDA=TRUE``, ``USE_HIP=TRUE`` or
 ``USE_SYCL=TRUE`` to the ``GNUmakefile`` or as a command line argument.
 
+GPU builds use Kokkos (see :ref:`sec:gpu:kokkos`).  Set ``KOKKOS_HOME`` to
+the installation prefix of a Kokkos that was built with the same GPU
+backend, e.g., ``make USE_CUDA=TRUE KOKKOS_HOME=$HOME/sw/kokkos``.
+
 AMReX does not require OpenACC, but application codes
 can use them if they are supported by the compiler.  For OpenACC support, add
 ``USE_ACC=TRUE``.  PGI, Cray and GNU compilers support OpenACC.  Thus,
@@ -534,6 +538,137 @@ Below is an example configuration for SYCL:
 
    \end{center}
 
+
+
+.. ===================================================================
+
+.. _sec:gpu:kokkos:
+
+Kokkos
+======
+
+In GPU builds, AMReX implements its performance-portability layer with
+`Kokkos <https://kokkos.org>`_.  :cpp:`amrex::ParallelFor`,
+:cpp:`amrex::ParallelForRNG`, :cpp:`ReduceOps`, :cpp:`ParReduce`, the
+atomics in :cpp:`Gpu::Atomic`, the allocation of device, managed and pinned
+memory by the arenas, and the copies between host and device run through
+Kokkos.  The AMReX interfaces described in this chapter do not change: code
+written for AMReX keeps working as before, and AMReX selects the Kokkos
+backend (CUDA, HIP or SYCL) that matches ``AMReX_GPU_BACKEND``.
+
+Building
+--------
+
+GPU builds require Kokkos: with CMake, ``AMReX_KOKKOS`` must be ``ON``
+(the default) when ``AMReX_GPU_BACKEND`` is ``CUDA``, ``HIP`` or ``SYCL``,
+and with GNU make, ``USE_KOKKOS`` must be ``TRUE`` (the default) when
+``USE_CUDA``, ``USE_HIP`` or ``USE_SYCL`` is ``TRUE``.  AMReX looks for an
+installed Kokkos (version 5.0 or newer), e.g., with ``-DKokkos_ROOT=/path/to/kokkos``.
+If there is none, AMReX downloads and builds Kokkos itself, with a configuration
+that matches AMReX's GPU backend, GPU architecture, OpenMP and relocatable
+device code settings.  ``-DAMReX_kokkos_internal=ON`` forces this,
+``-DAMReX_kokkos_src=/path/to/kokkos`` builds a local Kokkos source tree,
+and ``AMReX_kokkos_repo`` and ``AMReX_kokkos_branch`` select the downloaded
+version.
+
+An installed Kokkos must use the same backend as AMReX and must enable
+``Kokkos_ENABLE_SERIAL`` (and ``Kokkos_ENABLE_OPENMP`` if ``AMReX_OMP=ON``).
+For CUDA, AMReX compiles its sources as the CMake ``CUDA`` language, so
+Kokkos must be built with ``-DKokkos_ENABLE_COMPILE_AS_CMAKE_LANGUAGE=ON``
+(instead of using ``nvcc_wrapper``).  For example::
+
+    cmake -S kokkos -B build-kokkos -DKokkos_ENABLE_CUDA=ON -DKokkos_ENABLE_SERIAL=ON \
+          -DKokkos_ARCH_AMPERE80=ON -DKokkos_ENABLE_COMPILE_AS_CMAKE_LANGUAGE=ON \
+          -DCMAKE_CXX_STANDARD=20 -DCMAKE_INSTALL_PREFIX=$HOME/sw/kokkos
+    cmake --build build-kokkos --target install -j 8
+
+    cmake -S amrex -B build -DAMReX_GPU_BACKEND=CUDA -DCMAKE_CUDA_ARCHITECTURES=80 \
+          -DKokkos_ROOT=$HOME/sw/kokkos
+
+Kokkos supports one GPU architecture per build.  Kokkos and AMReX must use the
+same relocatable device code mode: AMReX's default ``AMReX_GPU_RDC=ON``
+(``USE_GPU_RDC=TRUE`` with GNU make) requires a Kokkos built with
+``-DKokkos_ENABLE_CUDA_RELOCATABLE_DEVICE_CODE=ON`` (or
+``-DKokkos_ENABLE_HIP_RELOCATABLE_DEVICE_CODE=ON``).  A Kokkos that AMReX
+builds itself matches automatically.
+
+In CPU builds, ``-DAMReX_KOKKOS=ON`` lets AMReX initialize Kokkos for the
+application; AMReX's loops on the CPU are not affected.
+
+Initialization and Streams
+--------------------------
+
+:cpp:`amrex::Initialize` initializes Kokkos on the GPU that AMReX selects,
+unless the application has already initialized Kokkos, in which case AMReX
+uses Kokkos' device.  Because Kokkos cannot be initialized again after
+:cpp:`Kokkos::finalize`, while AMReX can be initialized and finalized
+several times in a program, AMReX finalizes a Kokkos it initialized at
+program exit.  Kokkos prints warnings during its initialization (e.g.,
+about ``OMP_PROC_BIND``) only if ``amrex.kokkos_disable_warnings = 0``.
+
+Each AMReX GPU stream is a Kokkos execution space instance.  AMReX's
+default stream (stream index 0) is the default instance of
+:cpp:`Kokkos::DefaultExecutionSpace`, so Kokkos kernels launched by the
+application on :cpp:`Kokkos::DefaultExecutionSpace()` are ordered with
+AMReX kernels on the default stream.  :cpp:`Gpu::kokkosExecSpace()` returns
+the instance of the current AMReX stream (e.g., inside an :cpp:`MFIter`
+loop with several streams, or with an external stream from
+:cpp:`Gpu::setExternalGpuStream`), and :cpp:`Gpu::KokkosExecSpace` is its
+type:
+
+.. highlight:: c++
+
+::
+
+    for (MFIter mfi(mf); mfi.isValid(); ++mfi) {
+        Array4<Real> const& a = mf.array(mfi);
+        Box const& bx = mfi.validbox();
+        Kokkos::parallel_for(
+            Kokkos::MDRangePolicy<Gpu::KokkosExecSpace, Kokkos::Rank<3>>(
+                Gpu::kokkosExecSpace(), {bx.smallEnd(0), bx.smallEnd(1), bx.smallEnd(2)},
+                {bx.bigEnd(0)+1, bx.bigEnd(1)+1, bx.bigEnd(2)+1}),
+            KOKKOS_LAMBDA (int i, int j, int k) { a(i,j,k) *= 2.0; });
+    }
+
+Memory from AMReX's arenas can be used by Kokkos through unmanaged
+:cpp:`Kokkos::View`\ s, e.g.,
+``Kokkos::View<Real*, Gpu::KokkosDeviceMemSpace, Kokkos::MemoryUnmanaged> v(dv.data(), dv.size())``
+for a :cpp:`Gpu::DeviceVector<Real> dv`.
+
+Block-Level Kernels
+-------------------
+
+:cpp:`amrex::ParallelFor` kernels whose lambda takes a :cpp:`Gpu::Handler`
+run each block of threads as a Kokkos team, and block-level functions such as
+:cpp:`Gpu::deviceReduceSum(dest, value, handler)` use Kokkos team
+reductions.  :cpp:`Gpu::handler_launch<MT>(nblocks, shared_mem_bytes, f)`
+launches ``nblocks`` blocks of ``MT`` threads that call ``f(handler)``, where the
+handler provides the block and thread indices, ``shared_mem_bytes`` bytes of
+shared memory and a block barrier, and :cpp:`Gpu::team_launch` passes the
+Kokkos team member itself.  Kernels launched with :cpp:`amrex::launch` and a
+number of blocks still use the native CUDA or HIP launch, because their
+lambdas may use the native block and thread indices (e.g.,
+``threadIdx.x``).
+
+Performance Notes
+-----------------
+
+AMReX keeps its own implementations where Kokkos is not on par:
+
+* The prefix sums (:cpp:`Scan::PrefixSum`, :cpp:`Gpu::exclusive_scan`,
+  :cpp:`Gpu::inclusive_scan`) keep AMReX's single-pass implementation, which
+  is much faster than :cpp:`Kokkos::parallel_scan` on NVIDIA GPUs.
+* :cpp:`ParallelForRNG` keeps the random number generators of the vendor
+  libraries, so random sequences are unchanged.
+* On the CPU, AMReX's loop nests are not dispatched through Kokkos, because
+  :cpp:`Kokkos::MDRangePolicy` with :cpp:`Kokkos::Serial` does not vectorize
+  the innermost loop.
+
+A Kokkos kernel launch costs the host about one microsecond more than a native
+CUDA launch.  This matters only when the GPU work per kernel is a few
+microseconds or less, e.g., for :cpp:`MFIter` loops over many very small
+boxes.  :cpp:`ParallelFor` over a whole :cpp:`MultiFab` (with
+:cpp:`MultiFab::arrays`) launches one kernel for all boxes and avoids it.
 
 
 .. ===================================================================

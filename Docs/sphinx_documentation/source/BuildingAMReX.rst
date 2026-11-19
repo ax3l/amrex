@@ -519,6 +519,19 @@ The list of available options is reported in the :ref:`table <tab:cmakevar>` bel
    +------------------------------+-------------------------------------------------+-------------------------+-----------------------+
    | AMReX_GPU_BACKEND            |  Build with on-node, accelerated GPU backend    | NONE                    | NONE, SYCL, HIP, CUDA |
    +------------------------------+-------------------------------------------------+-------------------------+-----------------------+
+   | AMReX_KOKKOS                 |  Use Kokkos as the performance-portability      | YES with a GPU backend  | YES, NO               |
+   |                              |  layer (required in GPU builds, see             | (required), NO otherwise|                       |
+   |                              |  :ref:`sec:gpu:kokkos`)                         |                         |                       |
+   +------------------------------+-------------------------------------------------+-------------------------+-----------------------+
+   | AMReX_kokkos_internal        |  Download and build Kokkos with AMReX           | YES if Kokkos is not    | YES, NO               |
+   |                              |                                                 | found                   |                       |
+   +------------------------------+-------------------------------------------------+-------------------------+-----------------------+
+   | AMReX_kokkos_src             |  Local Kokkos source directory to build         |                         | user-defined          |
+   +------------------------------+-------------------------------------------------+-------------------------+-----------------------+
+   | AMReX_kokkos_repo            |  Kokkos repository to download                  | github.com/kokkos/kokkos| user-defined          |
+   +------------------------------+-------------------------------------------------+-------------------------+-----------------------+
+   | AMReX_kokkos_branch          |  Kokkos version (git tag or branch) to download | 5.3.0                   | user-defined          |
+   +------------------------------+-------------------------------------------------+-------------------------+-----------------------+
    | AMReX_GPU_RDC                |  Build with Relocatable Device Code support     | YES; NO with HIP and    | YES, NO               |
    |                              |                                                 | OpenMP                  |                       |
    +------------------------------+-------------------------------------------------+-------------------------+-----------------------+
