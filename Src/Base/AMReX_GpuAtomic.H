@@ -5,6 +5,7 @@
 #include <AMReX_GpuQualifiers.H>
 #include <AMReX_Functional.H>
 #include <AMReX_INT.H>
+#include <AMReX_Kokkos.H>
 
 #include <type_traits>
 #include <utility>
@@ -27,107 +28,16 @@ namespace Gpu::Atomic {
 // All these functions are non-atomic in host code!!!
 // If one needs them to be atomic in host code, use HostDevice::Atomic::*.
 // If we add more types for atomicAdd, we also need to update HasAtomicAdd in AMReX_TypeTraits.H.
+//
+// In GPU builds, the device code uses Kokkos atomics.
+
+#ifdef AMREX_USE_GPU
 
 /// \cond DOXYGEN_IGNORE
 namespace detail {
 
-#ifdef AMREX_USE_SYCL
-
-    template <typename R, typename Int, typename F>
-    AMREX_GPU_DEVICE AMREX_FORCE_INLINE
-    R atomic_op (R* const address, R const val, F const f) noexcept
-    {
-#if defined(__SYCL_DEVICE_ONLY__)
-        constexpr auto mo = sycl::memory_order::relaxed;
-        constexpr auto ms = sycl::memory_scope::device;
-        constexpr auto as = sycl::access::address_space::global_space;
-        static_assert(sizeof(R) == sizeof(Int), "sizeof R != sizeof Int");
-        Int* const add_as_I = reinterpret_cast<Int*>(address);
-        sycl::atomic_ref<Int,mo,ms,as> a{*add_as_I};
-        Int old_I = a.load(), new_I;
-        do {
-            R const new_R = f(*(reinterpret_cast<R const*>(&old_I)), val);
-            new_I = *(reinterpret_cast<Int const*>(&new_R));
-        } while (! a.compare_exchange_strong(old_I, new_I));
-        return *(reinterpret_cast<R const*>(&old_I));
-#else
-        R old = *address;
-        *address = f(*address, val);
-        return old;
-#endif
-    }
-
-    template <typename R, typename Int, typename Op, typename Cond>
-    AMREX_GPU_DEVICE AMREX_FORCE_INLINE
-    bool atomic_op_if (R* const address, R const val, Op&& op, Cond&& cond) noexcept
-    {
-#if defined(__SYCL_DEVICE_ONLY__)
-        constexpr auto mo = sycl::memory_order::relaxed;
-        constexpr auto ms = sycl::memory_scope::device;
-        constexpr auto as = sycl::access::address_space::global_space;
-        static_assert(sizeof(R) == sizeof(Int), "sizeof R != sizeof Int");
-        Int* const add_as_I = reinterpret_cast<Int*>(address);
-        sycl::atomic_ref<Int,mo,ms,as> a{*add_as_I};
-        Int old_I = a.load(), new_I;
-        bool test_success;
-        do {
-            R const tmp = op(*(reinterpret_cast<R const*>(&old_I)), val);
-            new_I = *(reinterpret_cast<Int const*>(&tmp));
-            test_success = cond(tmp);
-        } while (test_success && ! a.compare_exchange_strong(old_I, new_I));
-        return test_success;
-#else
-        R old = *address;
-        R const tmp = op(*(reinterpret_cast<R const*>(&old)), val);
-        if (cond(tmp)) {
-            *address = tmp;
-            return true;
-        } else {
-            return false;
-        }
-#endif
-    }
-
-#elif defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
-
-    // Min (IS_MIN) or Max of float or double with one integer atomic.
-    // Sign bit clear: the values order like signed ints. Sign bit set: the
-    // reverse order of unsigned ints. NaNs are ordered by their bit pattern.
-    template <bool IS_MIN, typename T>
-    AMREX_GPU_DEVICE AMREX_FORCE_INLINE
-    T atomic_fp_min_max (T* const m, T const value) noexcept
-    {
-        using I = std::conditional_t<sizeof(T) == 4, int, long long>;
-        using U = std::make_unsigned_t<I>;
-        I iv, old;
-        if constexpr (sizeof(T) == 4) {
-            iv = __float_as_int(value);
-        } else {
-            iv = __double_as_longlong(value);
-        }
-        if (iv >= 0) {
-            auto* im = reinterpret_cast<I*>(m);
-            if constexpr (IS_MIN) {
-                old = atomicMin(im, iv);
-            } else {
-                old = atomicMax(im, iv);
-            }
-        } else {
-            auto* um = reinterpret_cast<U*>(m);
-            auto const uv = static_cast<U>(iv);
-            if constexpr (IS_MIN) {
-                old = static_cast<I>(atomicMax(um, uv));
-            } else {
-                old = static_cast<I>(atomicMin(um, uv));
-            }
-        }
-        if constexpr (sizeof(T) == 4) {
-            return __int_as_float(old);
-        } else {
-            return __longlong_as_double(old);
-        }
-    }
-
+    // Generic atomic read-modify-write through a compare-and-swap loop on
+    // the bit pattern (Int) of R.
     template <typename R, typename Int, typename F>
     AMREX_GPU_DEVICE AMREX_FORCE_INLINE
     R atomic_op (R* const address, R const val, F const f) noexcept
@@ -138,7 +48,8 @@ namespace detail {
         do {
             assumed_I = old_I;
             R const new_R = f(*(reinterpret_cast<R const*>(&assumed_I)), val);
-            old_I = atomicCAS(add_as_I, assumed_I, *(reinterpret_cast<Int const*>(&new_R)));
+            old_I = Kokkos::atomic_compare_exchange(add_as_I, assumed_I,
+                                                    *(reinterpret_cast<Int const*>(&new_R)));
         } while (assumed_I != old_I);
         return *(reinterpret_cast<R const*>(&old_I));
     }
@@ -156,16 +67,17 @@ namespace detail {
             R const new_R = op(*(reinterpret_cast<R const*>(&assumed_I)), val);
             test_success = cond(new_R);
             if (test_success) {
-                old_I = atomicCAS(add_as_I, assumed_I, *(reinterpret_cast<Int const*>(&new_R)));
+                old_I = Kokkos::atomic_compare_exchange(add_as_I, assumed_I,
+                                                        *(reinterpret_cast<Int const*>(&new_R)));
             }
         } while (test_success && assumed_I != old_I);
         return test_success;
     }
 
-#endif
-
 }
 /// \endcond
+
+#endif
 
 ////////////////////////////////////////////////////////////////////////
 //  Add
@@ -173,6 +85,8 @@ namespace detail {
 
 #ifdef AMREX_USE_GPU
 
+// The address space parameter of the SYCL overloads is kept for
+// compatibility; Kokkos atomics work on generic pointers.
 #ifdef AMREX_USE_SYCL
     template<class T, sycl::access::address_space AS = sycl::access::address_space::global_space>
 #else
@@ -181,21 +95,12 @@ namespace detail {
     AMREX_GPU_DEVICE AMREX_FORCE_INLINE
     T Add_device (T* const sum, T const value) noexcept
     {
-#if defined(__SYCL_DEVICE_ONLY__)
-        constexpr auto mo = sycl::memory_order::relaxed;
-        constexpr auto ms = sycl::memory_scope::device;
-        sycl::atomic_ref<T,mo,ms,AS> a{*sum};
-        return a.fetch_add(value);
-#else
-        AMREX_IF_ON_DEVICE(( return atomicAdd(sum, value); ))
-        AMREX_IF_ON_HOST((
-            amrex::ignore_unused(sum, value);
-            return T(); // should never get here, but have to return something
-        ))
-#endif
+        return Kokkos::atomic_fetch_add(sum, value);
     }
 
 #if defined(AMREX_USE_HIP) && defined(__gfx90a__)
+    // Hardware floating-point atomics on MI200; Kokkos uses them only with
+    // -munsafe-fp-atomics.
     // https://github.com/ROCm-Developer-Tools/hipamd/blob/rocm-4.5.x/include/hip/amd_detail/amd_hip_unsafe_atomics.h
     AMREX_GPU_DEVICE AMREX_FORCE_INLINE
     float Add_device (float* const sum, float const value) noexcept
@@ -208,24 +113,6 @@ namespace detail {
     {
         return unsafeAtomicAdd(sum, value);
     }
-#endif
-
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
-
-    AMREX_GPU_DEVICE AMREX_FORCE_INLINE
-    Long Add_device (Long* const sum, Long const value) noexcept
-    {
-#ifdef AMREX_USE_HIP
-        return __hip_atomic_fetch_add(sum, value, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
-#else
-        // No 64-bit signed overload. Two's complement makes the unsigned add
-        // bitwise identical.
-        static_assert(sizeof(Long) == sizeof(unsigned long long));
-        return static_cast<Long>(atomicAdd(reinterpret_cast<unsigned long long*>(sum),
-                                           static_cast<unsigned long long>(value)));
-#endif
-    }
-
 #endif
 
 #endif
@@ -254,7 +141,7 @@ namespace detail {
 //  If
 ////////////////////////////////////////////////////////////////////////
 
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP) || defined(AMREX_USE_SYCL)
+#ifdef AMREX_USE_GPU
     template <typename T, typename Op, typename Cond>
     requires (sizeof(T) == sizeof(unsigned int))
     AMREX_GPU_DEVICE AMREX_FORCE_INLINE
@@ -321,12 +208,12 @@ namespace detail {
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void AddNoRet (T* sum, T value) noexcept
     {
-#if defined(__SYCL_DEVICE_ONLY__)
-        Add_device<T,AS>(sum, value);
+#ifdef AMREX_USE_SYCL
+        AMREX_IF_ON_DEVICE((Add_device<T,AS>(sum, value);))
 #else
         AMREX_IF_ON_DEVICE((Add_device(sum, value);))
-        AMREX_IF_ON_HOST((*sum += value;))
 #endif
+        AMREX_IF_ON_HOST((*sum += value;))
     }
 
 ////////////////////////////////////////////////////////////////////////
@@ -334,62 +221,12 @@ namespace detail {
 ////////////////////////////////////////////////////////////////////////
 
 #ifdef AMREX_USE_GPU
-
     template<class T>
     AMREX_GPU_DEVICE AMREX_FORCE_INLINE
     T Min_device (T* const m, T const value) noexcept
     {
-#if defined(__SYCL_DEVICE_ONLY__)
-        constexpr auto mo = sycl::memory_order::relaxed;
-        constexpr auto ms = sycl::memory_scope::device;
-        constexpr auto as = sycl::access::address_space::global_space;
-        sycl::atomic_ref<T,mo,ms,as> a{*m};
-        return a.fetch_min(value);
-#else
-        AMREX_IF_ON_DEVICE(( return atomicMin(m, value); ))
-        AMREX_IF_ON_HOST((
-            amrex::ignore_unused(m,value);
-            return T(); // should never get here, but have to return something
-        ))
-#endif
+        return Kokkos::atomic_fetch_min(m, value);
     }
-
-    AMREX_GPU_DEVICE AMREX_FORCE_INLINE
-    float Min_device (float* const m, float const value) noexcept
-    {
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
-        return detail::atomic_fp_min_max<true>(m, value);
-#else
-        return detail::atomic_op<float,int>(m,value,amrex::Minimum<float>());
-#endif
-    }
-
-    AMREX_GPU_DEVICE AMREX_FORCE_INLINE
-    double Min_device (double* const m, double const value) noexcept
-    {
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
-        return detail::atomic_fp_min_max<true>(m, value);
-#else
-        return detail::atomic_op<double,unsigned long long int>(m,value,amrex::Minimum<double>());
-#endif
-    }
-
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
-
-    AMREX_GPU_DEVICE AMREX_FORCE_INLINE
-    Long Min_device (Long* const m, Long const value) noexcept
-    {
-#ifdef AMREX_USE_HIP
-        return __hip_atomic_fetch_min(m, value, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
-#else
-        static_assert(sizeof(Long) == sizeof(long long));
-        return static_cast<Long>(atomicMin(reinterpret_cast<long long*>(m),
-                                           static_cast<long long>(value)));
-#endif
-    }
-
-#endif
-
 #endif
 
     template<class T>
@@ -411,62 +248,12 @@ namespace detail {
 ////////////////////////////////////////////////////////////////////////
 
 #ifdef AMREX_USE_GPU
-
     template<class T>
     AMREX_GPU_DEVICE AMREX_FORCE_INLINE
     T Max_device (T* const m, T const value) noexcept
     {
-#if defined(__SYCL_DEVICE_ONLY__)
-        constexpr auto mo = sycl::memory_order::relaxed;
-        constexpr auto ms = sycl::memory_scope::device;
-        constexpr auto as = sycl::access::address_space::global_space;
-        sycl::atomic_ref<T,mo,ms,as> a{*m};
-        return a.fetch_max(value);
-#else
-        AMREX_IF_ON_DEVICE(( return atomicMax(m, value); ))
-        AMREX_IF_ON_HOST((
-            amrex::ignore_unused(m,value);
-            return T(); // should never get here, but have to return something
-        ))
-#endif
+        return Kokkos::atomic_fetch_max(m, value);
     }
-
-    AMREX_GPU_DEVICE AMREX_FORCE_INLINE
-    float Max_device (float* const m, float const value) noexcept
-    {
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
-        return detail::atomic_fp_min_max<false>(m, value);
-#else
-        return detail::atomic_op<float,int>(m,value,amrex::Maximum<float>());
-#endif
-    }
-
-    AMREX_GPU_DEVICE AMREX_FORCE_INLINE
-    double Max_device (double* const m, double const value) noexcept
-    {
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
-        return detail::atomic_fp_min_max<false>(m, value);
-#else
-        return detail::atomic_op<double,unsigned long long int>(m,value,amrex::Maximum<double>());
-#endif
-    }
-
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
-
-    AMREX_GPU_DEVICE AMREX_FORCE_INLINE
-    Long Max_device (Long* const m, Long const value) noexcept
-    {
-#ifdef AMREX_USE_HIP
-        return __hip_atomic_fetch_max(m, value, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
-#else
-        static_assert(sizeof(Long) == sizeof(long long));
-        return static_cast<Long>(atomicMax(reinterpret_cast<long long*>(m),
-                                           static_cast<long long>(value)));
-#endif
-    }
-
-#endif
-
 #endif
 
     template<class T>
@@ -490,22 +277,14 @@ namespace detail {
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     int LogicalOr (int* const m, int const value) noexcept
     {
-#if defined(__SYCL_DEVICE_ONLY__)
-        constexpr auto mo = sycl::memory_order::relaxed;
-        constexpr auto ms = sycl::memory_scope::device;
-        constexpr auto as = sycl::access::address_space::global_space;
-        sycl::atomic_ref<int,mo,ms,as> a{*m};
-        return a.fetch_or(value);
-#else
         AMREX_IF_ON_DEVICE((
-            return atomicOr(m, value);
+            return Kokkos::atomic_fetch_or(m, value);
         ))
         AMREX_IF_ON_HOST((
             int const old = *m;
             *m = (*m) || value;
             return old;
         ))
-#endif
     }
 
 ////////////////////////////////////////////////////////////////////////
@@ -515,22 +294,14 @@ namespace detail {
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     int LogicalAnd (int* const m, int const value) noexcept
     {
-#if defined(__SYCL_DEVICE_ONLY__)
-        constexpr auto mo = sycl::memory_order::relaxed;
-        constexpr auto ms = sycl::memory_scope::device;
-        constexpr auto as = sycl::access::address_space::global_space;
-        sycl::atomic_ref<int,mo,ms,as> a{*m};
-        return a.fetch_and(value ? ~0x0 : 0);
-#else
         AMREX_IF_ON_DEVICE((
-            return atomicAnd(m, value ? ~0x0 : 0);
+            return Kokkos::atomic_fetch_and(m, value ? ~0x0 : 0);
         ))
         AMREX_IF_ON_HOST((
             int const old = *m;
             *m = (*m) && value;
             return old;
         ))
-#endif
     }
 
 ////////////////////////////////////////////////////////////////////////
@@ -541,22 +312,14 @@ namespace detail {
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     T Exch (T* address, T val) noexcept
     {
-#if defined(__SYCL_DEVICE_ONLY__)
-        constexpr auto mo = sycl::memory_order::relaxed;
-        constexpr auto ms = sycl::memory_scope::device;
-        constexpr auto as = sycl::access::address_space::global_space;
-        sycl::atomic_ref<T,mo,ms,as> a{*address};
-        return a.exchange(val);
-#else
         AMREX_IF_ON_DEVICE((
-            return atomicExch(address, val);
+            return Kokkos::atomic_exchange(address, val);
         ))
         AMREX_IF_ON_HOST((
             auto const old = *address;
             *address = val;
             return old;
         ))
-#endif
     }
 
 ////////////////////////////////////////////////////////////////////////
@@ -566,24 +329,15 @@ namespace detail {
     template <typename T>
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     T CAS (T* const address, T compare, T const val) noexcept
-    {           // cannot be T const compare because of compare_exchange_strong
-#if defined(__SYCL_DEVICE_ONLY__)
-        constexpr auto mo = sycl::memory_order::relaxed;
-        constexpr auto ms = sycl::memory_scope::device;
-        constexpr auto as = sycl::access::address_space::global_space;
-        sycl::atomic_ref<T,mo,ms,as> a{*address};
-        a.compare_exchange_strong(compare, val);
-        return compare;
-#else
+    {
         AMREX_IF_ON_DEVICE((
-            return atomicCAS(address, compare, val);
+            return Kokkos::atomic_compare_exchange(address, compare, val);
         ))
         AMREX_IF_ON_HOST((
             auto const old = *address;
             *address = (old == compare ? val : old);
             return old;
         ))
-#endif
     }
 
 ////////////////////////////////////////////////////////////////////////

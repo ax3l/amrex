@@ -95,27 +95,14 @@ ParallelFor_doit (MF const& mf, IntVect const& nghost, int ncomp, IntVect const&
         // Box and block within the box from the block index, without a division.
         const Math::FastDivmodU32 fdm_box(nblocks_per_box);
 
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
 
-        amrex::launch_global<MT>
-            <<<nblocks, MT, 0, Gpu::gpuStream()>>>
-            ([=] AMREX_GPU_DEVICE () noexcept
+        Gpu::team_launch<MT>(nblocks,
+             [=] AMREX_GPU_DEVICE (Gpu::KokkosTeamMember const& tm) noexcept
              {
                  std::uint32_t ibox, iblock;
-                 fdm_box(ibox, iblock, blockIdx.x);
-                 auto icell = BoxIndexer::UInt(iblock)*MT + threadIdx.x;
+                 fdm_box(ibox, iblock, std::uint32_t(tm.league_rank()));
+                 auto icell = BoxIndexer::UInt(iblock)*MT + BoxIndexer::UInt(tm.team_rank());
 
-#elif defined(AMREX_USE_SYCL)
-
-        amrex::launch<MT>(nblocks, Gpu::gpuStream(),
-             [=] AMREX_GPU_DEVICE (sycl::nd_item<1> const& item) noexcept
-             {
-                 auto blockIdxx = std::uint32_t(item.get_group_linear_id());
-                 int threadIdxx = item.get_local_linear_id();
-                 std::uint32_t ibox, iblock;
-                 fdm_box(ibox, iblock, blockIdxx);
-                 auto icell = BoxIndexer::UInt(iblock)*MT + threadIdxx;
-#endif
                  BoxIndexer const& indexer = dp_boxes[ibox];
                  if (icell < indexer.numPts()) {
                      auto [i, j, k] = indexer(icell);
@@ -167,27 +154,14 @@ ParallelForStrided_doit (MF const& mf, IntVect const& stride, IntVect const& off
     const BoxIndexer* dp_boxes = parforinfo.getBoxes();
     const Math::FastDivmodU32 fdm_box(nblocks_per_box);
 
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
 
-    amrex::launch_global<MT>
-        <<<nblocks, MT, 0, Gpu::gpuStream()>>>
-        ([=] AMREX_GPU_DEVICE () noexcept
+    Gpu::team_launch<MT>(nblocks,
+         [=] AMREX_GPU_DEVICE (Gpu::KokkosTeamMember const& tm) noexcept
          {
              std::uint32_t ibox, iblock;
-             fdm_box(ibox, iblock, blockIdx.x);
-             auto icell = BoxIndexer::UInt(iblock)*MT + threadIdx.x;
+             fdm_box(ibox, iblock, std::uint32_t(tm.league_rank()));
+             auto icell = BoxIndexer::UInt(iblock)*MT + BoxIndexer::UInt(tm.team_rank());
 
-#elif defined(AMREX_USE_SYCL)
-
-    amrex::launch<MT>(nblocks, Gpu::gpuStream(),
-         [=] AMREX_GPU_DEVICE (sycl::nd_item<1> const& item) noexcept
-         {
-             auto blockIdxx = std::uint32_t(item.get_group_linear_id());
-             int threadIdxx = item.get_local_linear_id();
-             std::uint32_t ibox, iblock;
-             fdm_box(ibox, iblock, blockIdxx);
-             auto icell = BoxIndexer::UInt(iblock)*MT + threadIdxx;
-#endif
              BoxIndexer const& indexer = dp_boxes[ibox];
              if (icell < indexer.numPts()) {
                  IntVect iv = indexer.intVect(icell);
@@ -219,27 +193,14 @@ ParallelForRedBlack_doit (MF const& mf, int redblack, F const& f)
     const int* dp_xbounds = parforinfo.getXBounds();
     const Math::FastDivmodU32 fdm_box(nblocks_per_box);
 
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
 
-    amrex::launch_global<MT>
-        <<<nblocks, MT, 0, Gpu::gpuStream()>>>
-        ([=] AMREX_GPU_DEVICE () noexcept
+    Gpu::team_launch<MT>(nblocks,
+         [=] AMREX_GPU_DEVICE (Gpu::KokkosTeamMember const& tm) noexcept
          {
              std::uint32_t ibox, iblock;
-             fdm_box(ibox, iblock, blockIdx.x);
-             auto icell = BoxIndexer::UInt(iblock)*MT + threadIdx.x;
+             fdm_box(ibox, iblock, std::uint32_t(tm.league_rank()));
+             auto icell = BoxIndexer::UInt(iblock)*MT + BoxIndexer::UInt(tm.team_rank());
 
-#elif defined(AMREX_USE_SYCL)
-
-    amrex::launch<MT>(nblocks, Gpu::gpuStream(),
-         [=] AMREX_GPU_DEVICE (sycl::nd_item<1> const& item) noexcept
-         {
-             auto blockIdxx = std::uint32_t(item.get_group_linear_id());
-             int threadIdxx = item.get_local_linear_id();
-             std::uint32_t ibox, iblock;
-             fdm_box(ibox, iblock, blockIdxx);
-             auto icell = BoxIndexer::UInt(iblock)*MT + threadIdxx;
-#endif
              // The box coarsened by 2 in x, and the box's x bounds.
              BoxIndexer const& indexer = dp_boxes[ibox];
              if (icell < indexer.numPts()) {

@@ -95,6 +95,7 @@ set(AMReX_ASCENT_FOUND              @AMReX_ASCENT@)
 set(AMReX_HYPRE_FOUND               @AMReX_HYPRE@)
 set(AMReX_PETSC_FOUND               @AMReX_PETSC@)
 set(AMReX_SUNDIALS_FOUND            @AMReX_SUNDIALS@)
+set(AMReX_KOKKOS_FOUND              @AMReX_KOKKOS@)
 set(AMReX_HDF5_FOUND                @AMReX_HDF5@)
 set(AMReX_HDF5_ZFP_FOUND            @AMReX_HDF5_ZFP@)
 
@@ -158,6 +159,7 @@ set(AMReX_ASCENT                    @AMReX_ASCENT@)
 set(AMReX_HYPRE                     @AMReX_HYPRE@)
 set(AMReX_PETSC                     @AMReX_PETSC@)
 set(AMReX_SUNDIALS                  @AMReX_SUNDIALS@)
+set(AMReX_KOKKOS                    @AMReX_KOKKOS@)
 set(AMReX_HDF5                      @AMReX_HDF5@)
 set(AMReX_HDF5_ZFP                  @AMReX_HDF5_ZFP@)
 
@@ -209,6 +211,10 @@ if (@AMReX_OMP@)
       list(APPEND _omp_components Fortran)
    endif ()
    find_dependency(OpenMP REQUIRED ${_omp_components})
+endif ()
+
+if (@AMReX_KOKKOS@)
+   find_dependency(Kokkos @AMReX_KOKKOS_MIN_VERSION@ REQUIRED CONFIG)
 endif ()
 
 #

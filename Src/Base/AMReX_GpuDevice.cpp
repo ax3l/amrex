@@ -184,8 +184,7 @@ StreamManager::sync () {
         amrex::Abort(std::string("streamSynchronize: ")+ex.what()+"!!!!!");
     }
 #else
-    AMREX_HIP_OR_CUDA( AMREX_HIP_SAFE_CALL(hipStreamSynchronize(m_stream));,
-                       AMREX_CUDA_SAFE_CALL(cudaStreamSynchronize(m_stream)); )
+    m_exec->fence("amrex::Gpu::streamSynchronize");
 #endif
 
     // synconizing the stream may have taken a long time and
@@ -195,6 +194,26 @@ StreamManager::sync () {
     for (auto [arena, mem] : new_empty_wait_list) {
         arena->free(mem);
     }
+}
+
+void
+StreamManager::setExecSpace (KokkosExecSpace const& exec)
+{
+    m_exec = exec;
+#if defined(AMREX_USE_CUDA)
+    m_stream = exec.cuda_stream();
+#elif defined(AMREX_USE_HIP)
+    m_stream = exec.hip_stream();
+#elif defined(AMREX_USE_SYCL)
+    // The SYCL queue is owned by AMReX (m_stream.queue); exec wraps it.
+    AMREX_ALWAYS_ASSERT(m_stream.queue != nullptr);
+#endif
+}
+
+void
+StreamManager::resetExecSpace ()
+{
+    m_exec.reset();
 }
 
 void
@@ -463,6 +482,12 @@ Device::Initialize (bool minimal, int a_device_id)
     }
 #endif
 
+    amrex::kokkos::Initialize(device_id);
+    if (Kokkos::device_id() != device_id) {
+        // The application initialized Kokkos on its own device.
+        device_id = Kokkos::device_id();
+    }
+
 #ifdef AMREX_USE_ACC
     amrex_initialize_acc(device_id);
 #endif
@@ -598,16 +623,16 @@ Device::Finalize ()
 
 #ifdef AMREX_USE_SYCL
     for (auto& s : gpu_stream_pool) {
+        s.resetExecSpace();
         delete s.getStream().queue;
         s.getStream().queue = nullptr;
     }
     sycl_context.reset();
     sycl_device.reset();
 #else
-    for (int i = 0; i < max_gpu_streams; ++i)
-    {
-        AMREX_HIP_OR_CUDA( AMREX_HIP_SAFE_CALL( hipStreamDestroy(gpu_stream_pool[i].getStream()));,
-                          AMREX_CUDA_SAFE_CALL(cudaStreamDestroy(gpu_stream_pool[i].getStream())); );
+    // The streams are owned by the Kokkos execution space instances.
+    for (int i = 0; i < max_gpu_streams; ++i) {
+        gpu_stream_pool[i].resetExecSpace();
     }
 #endif
 
@@ -619,6 +644,25 @@ Device::Finalize ()
 
 #endif
 }
+
+#if defined(AMREX_USE_GPU) && !defined(AMREX_USE_SYCL)
+void
+Device::create_kokkos_streams ()
+{
+    // AMReX stream 0 is Kokkos' default execution space instance, so that
+    // work user code submits to Kokkos::DefaultExecutionSpace() is ordered
+    // with AMReX's default stream.  The other AMReX streams are new
+    // instances; they own their streams.
+    gpu_stream_pool[0].setExecSpace(KokkosExecSpace{});
+    if (max_gpu_streams > 1) {
+        auto instances = Kokkos::Experimental::partition_space(
+            KokkosExecSpace{}, std::vector<int>(max_gpu_streams-1, 1));
+        for (int i = 1; i < max_gpu_streams; ++i) {
+            gpu_stream_pool[i].setExecSpace(instances[i-1]);
+        }
+    }
+}
+#endif
 
 void
 Device::initialize_gpu (bool minimal)
@@ -642,9 +686,7 @@ Device::initialize_gpu (bool minimal)
 
     // AMD devices do not support shared cache banking.
 
-    for (int i = 0; i < max_gpu_streams; ++i) {
-        AMREX_HIP_SAFE_CALL(hipStreamCreate(&gpu_stream_pool[i].getStream()));
-    }
+    create_kokkos_streams();
 
 #ifdef AMREX_GPU_STREAM_ALLOC_SUPPORT
     AMREX_HIP_SAFE_CALL(hipDeviceGetAttribute(&memory_pools_supported, hipDeviceAttributeMemoryPoolsSupported, device_id));
@@ -670,12 +712,12 @@ Device::initialize_gpu (bool minimal)
     }
 #endif
 
-    for (int i = 0; i < max_gpu_streams; ++i) {
-        AMREX_CUDA_SAFE_CALL(cudaStreamCreate(&gpu_stream_pool[i].getStream()));
+    create_kokkos_streams();
 #ifdef AMREX_USE_ACC
+    for (int i = 0; i < max_gpu_streams; ++i) {
         acc_set_cuda_stream(i, gpu_stream_pool[i].getStream());
-#endif
     }
+#endif
 
     AMREX_ALWAYS_ASSERT_WITH_MESSAGE(warp_size == device_prop.warpSize, "Incorrect warp size");
 
@@ -693,6 +735,7 @@ Device::initialize_gpu (bool minimal)
             gpu_stream_pool[i].getStream().queue = new sycl::queue(*sycl_context, *sycl_device,
                                          amrex_sycl_error_handler,
                                          sycl::property_list{sycl::property::queue::in_order{}});
+            gpu_stream_pool[i].setExecSpace(Kokkos::SYCL(*gpu_stream_pool[i].getStream().queue));
         }
     }
 
@@ -944,6 +987,12 @@ Device::setExternalStream (gpuStream_t s)
         ExternalStream{std::make_unique<StreamManager>(),
                        gpu_stream_index[OpenMP::get_thread_num()]});
     external_stream_stack.back().manager->getStream() = s;
+    // Non-owning Kokkos instance on the user's stream
+#if defined(AMREX_USE_SYCL)
+    external_stream_stack.back().manager->setExecSpace(Kokkos::SYCL(*s.queue));
+#else
+    external_stream_stack.back().manager->setExecSpace(KokkosExecSpace(s));
+#endif
 }
 
 void
@@ -980,8 +1029,7 @@ void
 Device::synchronize ()
 {
 #ifdef AMREX_USE_GPU
-    AMREX_HIP_OR_CUDA( AMREX_HIP_SAFE_CALL(hipDeviceSynchronize());,
-                       AMREX_CUDA_SAFE_CALL(cudaDeviceSynchronize()); )
+    Kokkos::fence("amrex::Gpu::synchronize");
     // After the device-wide sync completes, synchronizing all AMReX-managed
     // streams is cheap and drains deferred frees queued on their managers.
     streamSynchronizeAll();

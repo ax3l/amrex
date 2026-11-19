@@ -1113,6 +1113,22 @@ ifeq ($(USE_UPCXX),TRUE)
   include        $(AMREX_HOME)/Tools/GNUMake/Make.upcxx
 endif
 
+# Kokkos is AMReX's performance-portability layer in GPU builds
+ifeq ($(USE_GPU),TRUE)
+  USE_KOKKOS ?= TRUE
+else
+  USE_KOKKOS ?= FALSE
+endif
+ifeq ($(USE_GPU),TRUE)
+  ifneq ($(USE_KOKKOS),TRUE)
+    $(error GPU builds require USE_KOKKOS=TRUE, because AMReX's GPU portability layer is implemented with Kokkos)
+  endif
+endif
+ifeq ($(USE_KOKKOS),TRUE)
+  $(info Loading $(AMREX_HOME)/Tools/GNUMake/packages/Make.kokkos...)
+  include        $(AMREX_HOME)/Tools/GNUMake/packages/Make.kokkos
+endif
+
 ifeq ($(USE_HYPRE),TRUE)
   $(info Loading $(AMREX_HOME)/Tools/GNUMake/packages/Make.hypre...)
   include        $(AMREX_HOME)/Tools/GNUMake/packages/Make.hypre

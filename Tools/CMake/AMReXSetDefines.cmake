@@ -53,6 +53,9 @@ add_amrex_define( AMREX_USE_SIMD NO_LEGACY IF AMReX_SIMD )
 # OpenMP -- This one has legacy definition only in Base/AMReX_omp_mod.F90
 add_amrex_define( AMREX_USE_OMP IF AMReX_OMP )
 
+# Kokkos
+add_amrex_define( AMREX_USE_KOKKOS NO_LEGACY IF AMReX_KOKKOS )
+
 # SYCL
 if (AMReX_SYCL)
   add_amrex_define( AMREX_USE_SYCL NO_LEGACY )

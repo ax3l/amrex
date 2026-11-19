@@ -58,17 +58,6 @@ namespace {
 #endif
     bool the_arena_is_managed = false;
     bool abort_on_out_of_gpu_memory = false;
-
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
-    // Only running out of memory is recoverable; other errors abort.
-    void abort_unless_out_of_memory (gpuError_t ret, char const* call)
-    {
-        if (ret != AMREX_HIP_OR_CUDA(hipErrorOutOfMemory, cudaErrorMemoryAllocation)) {
-            amrex::Abort(std::string("Arena: ") + call + " returned " + std::to_string(ret) + ": "
-                         + AMREX_HIP_OR_CUDA(hipGetErrorString(ret), cudaGetErrorString(ret)));
-        }
-    }
-#endif
 }
 
 const std::size_t Arena::align_size;
@@ -222,97 +211,39 @@ Arena::allocate_system (std::size_t nbytes) // NOLINT(readability-make-member-fu
 
 #ifdef AMREX_USE_GPU
     }
-    else if (arena_info.device_use_hostalloc)
-    {
-        AMREX_HIP_OR_CUDA_OR_SYCL(
-            auto ret = hipHostMalloc(&p, nbytes, hipHostMallocMapped | hipHostMallocNonCoherent);
-            if (ret != hipSuccess) { p = nullptr; (void)hipGetLastError(); },
-            auto ret = cudaHostAlloc(&p, nbytes, cudaHostAllocMapped);
-            if (ret != cudaSuccess) { p = nullptr; (void)cudaGetLastError(); },
-            p = sycl::aligned_alloc_host(align_size, nbytes, Gpu::Device::syclContext())
-        );
-
-        if (!p) {
-            freeUnused_protected();
-            AMREX_HIP_OR_CUDA_OR_SYCL(
-                ret = hipHostMalloc(&p, nbytes, hipHostMallocMapped | hipHostMallocNonCoherent);
-                if (ret != hipSuccess) { p = nullptr; (void)hipGetLastError(); },
-                ret = cudaHostAlloc(&p, nbytes, cudaHostAllocMapped);
-                if (ret != cudaSuccess) { p = nullptr; (void)cudaGetLastError(); },
-                p = sycl::aligned_alloc_host(align_size, nbytes, Gpu::Device::syclContext())
-            );
-        }
-
-        if (!p) {
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
-            abort_unless_out_of_memory(ret, AMREX_HIP_OR_CUDA("hipHostMalloc", "cudaHostAlloc"));
-#endif
-            amrex::ErrorStream() <<
-                "Out of CPU pinned memory: got nullptr from host malloc\n";
-            std::string msg = "";
-            AMREX_HIP_OR_CUDA_OR_SYCL(
-                msg = "hipHostMalloc returned " + std::to_string(ret) +
-                      ": " + hipGetErrorString(ret),
-                msg = "cudaHostAlloc returned " + std::to_string(ret) +
-                      ": " + cudaGetErrorString(ret),
-                msg = "sycl::aligned_alloc_host returned nullptr"
-            );
-            throw_out_of_memory("CPU pinned memory", nbytes, msg);
-        }
-    }
     else
     {
-        std::size_t free_mem_avail = Gpu::Device::freeMemAvailable();
-        if (nbytes >= free_mem_avail) {
-            free_mem_avail += freeUnused_protected(); // For CArena, mutex has already acquired
-            if (abort_on_out_of_gpu_memory && nbytes >= free_mem_avail &&
-                arena_info.device_use_managed_memory) {
-                throw_out_of_memory("GPU memory", nbytes,
-                                    "Free memory: " + std::to_string(free_mem_avail));
+        // GPU-accessible memory from a Kokkos memory space
+        auto const kind = memoryKind();
+        if (kind != kokkos::MemoryKind::Pinned) {
+            std::size_t free_mem_avail = Gpu::Device::freeMemAvailable();
+            if (nbytes >= free_mem_avail) {
+                free_mem_avail += freeUnused_protected(); // For CArena, mutex has already acquired
+                if (abort_on_out_of_gpu_memory && nbytes >= free_mem_avail &&
+                    kind == kokkos::MemoryKind::Managed) {
+                    throw_out_of_memory("GPU memory", nbytes,
+                                        "Free memory: " + std::to_string(free_mem_avail));
+                }
             }
         }
-
-        if (arena_info.device_use_managed_memory)
-        {
+        if (kind == kokkos::MemoryKind::Managed) {
             AMREX_ALWAYS_ASSERT_WITH_MESSAGE(Gpu::Device::managedMemorySupported(),
                                              "Managed memory is not supported on this system");
+        }
 
-            AMREX_HIP_OR_CUDA_OR_SYCL(
-                auto ret = hipMallocManaged(&p, nbytes);
-                if (ret != hipSuccess) { p = nullptr; (void)hipGetLastError(); },
-                auto ret = cudaMallocManaged(&p, nbytes);
-                if (ret != cudaSuccess) { p = nullptr; (void)cudaGetLastError(); },
-                p = sycl::aligned_alloc_shared(align_size, nbytes, Gpu::Device::syclDevice(),
-                                               Gpu::Device::syclContext())
-            );
+        std::string error;
+        p = kokkos::allocate(kind, nbytes, "AMReX", &error);
+        if (!p) {
+            freeUnused_protected();
+            p = kokkos::allocate(kind, nbytes, "AMReX", &error);
+        }
+        if (!p) {
+            char const* what = (kind == kokkos::MemoryKind::Pinned) ? "CPU pinned memory"
+                : ((kind == kokkos::MemoryKind::Managed) ? "GPU managed memory" : "GPU device memory");
+            throw_out_of_memory(what, nbytes, error);
+        }
 
-            if (!p) {
-                freeUnused_protected();
-                AMREX_HIP_OR_CUDA_OR_SYCL(
-                    ret = hipMallocManaged(&p, nbytes);
-                    if (ret != hipSuccess) { p = nullptr; (void)hipGetLastError(); },
-                    ret = cudaMallocManaged(&p, nbytes);
-                    if (ret != cudaSuccess) { p = nullptr; (void)cudaGetLastError(); },
-                    p = sycl::aligned_alloc_shared(align_size, nbytes, Gpu::Device::syclDevice(),
-                                                   Gpu::Device::syclContext())
-                );
-            }
-
-            if (!p) {
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
-                abort_unless_out_of_memory(ret, AMREX_HIP_OR_CUDA("hipMallocManaged", "cudaMallocManaged"));
-#endif
-                std::string msg = "";
-                AMREX_HIP_OR_CUDA_OR_SYCL(
-                    msg = "hipMallocManaged returned " + std::to_string(ret) +
-                          ": " + hipGetErrorString(ret),
-                    msg = "cudaMallocManaged returned " + std::to_string(ret) +
-                          ": " + cudaGetErrorString(ret),
-                    msg = "sycl::aligned_alloc_shared returned nullptr"
-                );
-                throw_out_of_memory("GPU managed memory", nbytes, msg);
-            }
-
+        if (kind == kokkos::MemoryKind::Managed) {
 #ifdef AMREX_USE_HIP
             // Otherwise atomiAdd won't work because we instruct the compiler to do unsafe atomics
             AMREX_HIP_SAFE_CALL(hipMemAdvise(p, nbytes, hipMemAdviseSetCoarseGrain,
@@ -326,44 +257,6 @@ Arena::allocate_system (std::size_t nbytes) // NOLINT(readability-make-member-fu
             {
                 const int device = Gpu::Device::deviceId();
                 Gpu::Device::mem_advise_set_preferred(p, nbytes, device);
-            }
-        }
-        else
-        {
-            AMREX_HIP_OR_CUDA_OR_SYCL(
-                auto ret = hipMalloc(&p, nbytes);
-                if (ret != hipSuccess) { p = nullptr; (void)hipGetLastError(); },
-                auto ret = cudaMalloc(&p, nbytes);
-                if (ret != cudaSuccess) { p = nullptr; (void)cudaGetLastError(); },
-                p = sycl::aligned_alloc_device(align_size, nbytes, Gpu::Device::syclDevice(),
-                                               Gpu::Device::syclContext())
-            );
-
-            if (!p) {
-                freeUnused_protected();
-                AMREX_HIP_OR_CUDA_OR_SYCL(
-                    ret = hipMalloc(&p, nbytes);
-                    if (ret != hipSuccess) { p = nullptr; (void)hipGetLastError(); },
-                    ret = cudaMalloc(&p, nbytes);
-                    if (ret != cudaSuccess) { p = nullptr; (void)cudaGetLastError(); },
-                    p = sycl::aligned_alloc_device(align_size, nbytes, Gpu::Device::syclDevice(),
-                                                   Gpu::Device::syclContext())
-                );
-            }
-
-            if (!p) {
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
-                abort_unless_out_of_memory(ret, AMREX_HIP_OR_CUDA("hipMalloc", "cudaMalloc"));
-#endif
-                std::string msg = "";
-                AMREX_HIP_OR_CUDA_OR_SYCL(
-                    msg = "hipMalloc returned " + std::to_string(ret) +
-                          ": " + hipGetErrorString(ret),
-                    msg = "cudaMalloc returned " + std::to_string(ret) +
-                          ": " + cudaGetErrorString(ret),
-                    msg = "sycl::aligned_alloc_device returned nullptr"
-                );
-                throw_out_of_memory("GPU device memory", nbytes, msg);
             }
         }
     }
@@ -388,19 +281,9 @@ Arena::deallocate_system (void* p, std::size_t nbytes) // NOLINT(readability-mak
 
 #ifdef AMREX_USE_GPU
     }
-    else if (arena_info.device_use_hostalloc)
-    {
-        AMREX_HIP_OR_CUDA_OR_SYCL
-            (AMREX_HIP_SAFE_CALL ( hipHostFree(p));,
-             AMREX_CUDA_SAFE_CALL(cudaFreeHost(p));,
-             sycl::free(p,Gpu::Device::syclContext()));
-    }
     else
     {
-        AMREX_HIP_OR_CUDA_OR_SYCL
-            (AMREX_HIP_SAFE_CALL ( hipFree(p));,
-             AMREX_CUDA_SAFE_CALL(cudaFree(p));,
-             sycl::free(p,Gpu::Device::syclContext()));
+        kokkos::deallocate(memoryKind(), p, nbytes, "AMReX");
     }
 #endif
 }

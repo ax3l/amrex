@@ -13,6 +13,7 @@
 #ifdef AMREX_USE_GPU
 #include <AMReX_GpuControl.H>
 #endif
+#include <AMReX_Kokkos.H>
 
 #ifdef AMREX_TINY_PROFILING
 #include <AMReX_TinyProfiler.H>
@@ -374,6 +375,14 @@ protected:
     virtual std::size_t freeUnused_protected () { return 0; }
     void* allocate_system (std::size_t nbytes);
     void deallocate_system (void* p, std::size_t nbytes);
+#ifdef AMREX_USE_GPU
+    //! Kokkos memory space of the GPU-accessible memory of this arena
+    [[nodiscard]] kokkos::MemoryKind memoryKind () const noexcept {
+        if (arena_info.device_use_hostalloc) { return kokkos::MemoryKind::Pinned; }
+        if (arena_info.device_use_managed_memory) { return kokkos::MemoryKind::Managed; }
+        return kokkos::MemoryKind::Device;
+    }
+#endif
     [[noreturn]] static void throw_out_of_memory (std::string const& memory_type,
                                                   std::size_t nbytes,
                                                   std::string const& error_msg);

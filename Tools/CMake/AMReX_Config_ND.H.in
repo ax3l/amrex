@@ -22,6 +22,7 @@
 #cmakedefine AMREX_USE_SIMD
 #cmakedefine AMREX_USE_OMP
 #cmakedefine BL_USE_OMP
+#cmakedefine AMREX_USE_KOKKOS
 #cmakedefine AMREX_USE_SYCL
 #cmakedefine AMREX_USE_DPCPP
 #cmakedefine AMREX_SYCL_SUB_GROUP_SIZE @AMREX_SYCL_SUB_GROUP_SIZE@

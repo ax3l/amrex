@@ -1,0 +1,37 @@
+#
+# Kokkos: AMReX's performance-portability layer in GPU builds.
+#
+# Set KOKKOS_HOME (or Kokkos_ROOT, KOKKOS_ROOT) to the installation prefix
+# of a Kokkos (>= 5.0) that was built with the same backend as AMReX:
+# Kokkos_ENABLE_CUDA (with Kokkos_ENABLE_COMPILE_AS_CMAKE_LANGUAGE=ON),
+# Kokkos_ENABLE_HIP or Kokkos_ENABLE_SYCL, and Kokkos_ENABLE_SERIAL (and
+# Kokkos_ENABLE_OPENMP if USE_OMP=TRUE).  AMReX_Kokkos.H checks this at
+# compile time.
+#
+
+CPPFLAGS += -DAMREX_USE_KOKKOS
+
+ifndef KOKKOS_HOME
+ifdef Kokkos_ROOT
+  KOKKOS_HOME = $(Kokkos_ROOT)
+endif
+ifdef KOKKOS_ROOT
+  KOKKOS_HOME = $(KOKKOS_ROOT)
+endif
+endif
+
+ifndef KOKKOS_HOME
+  $(error USE_KOKKOS=TRUE requires KOKKOS_HOME, the installation prefix of Kokkos)
+endif
+
+KOKKOS_ABSPATH = $(abspath $(KOKKOS_HOME))
+SYSTEM_INCLUDE_LOCATIONS += $(KOKKOS_ABSPATH)/include
+LIBRARY_LOCATIONS += $(KOKKOS_ABSPATH)/lib
+LIBRARY_LOCATIONS += $(KOKKOS_ABSPATH)/lib64
+LIBRARIES += -Wl,-rpath,$(KOKKOS_ABSPATH)/lib
+LIBRARIES += -Wl,-rpath,$(KOKKOS_ABSPATH)/lib64
+LIBRARIES += -lkokkoscore -ldl
+
+ifeq ($(USE_CUDA),TRUE)
+  LIBRARIES += -lcuda
+endif

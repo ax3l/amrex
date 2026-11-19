@@ -10,6 +10,7 @@
 #include <AMReX_GpuControl.H>
 #include <AMReX_OpenMP.H>
 #include <AMReX_Vector.H>
+#include <AMReX_Kokkos.H>
 
 #include <algorithm>
 #include <array>
@@ -17,6 +18,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <optional>
 
 #define AMREX_GPU_MAX_STREAMS 8
 
@@ -66,9 +68,17 @@ class StreamManager {
     gpuStream_t m_stream;
     std::mutex m_mutex;
     Vector<std::pair<Arena*, void*>> m_free_wait_list;
+    //! Kokkos execution space instance that launches on m_stream
+    std::optional<KokkosExecSpace> m_exec;
 public:
     [[nodiscard]] gpuStream_t& getStream ();
     [[nodiscard]] gpuStream_t const& getStream () const;
+    //! Kokkos execution space instance that launches on this stream
+    [[nodiscard]] KokkosExecSpace const& getExecSpace () const noexcept { return *m_exec; }
+    //! Make this stream manager use the Kokkos instance `exec` and its stream
+    void setExecSpace (KokkosExecSpace const& exec);
+    //! Release the Kokkos instance (and with it the stream, if Kokkos owns it)
+    void resetExecSpace ();
     void sync ();
     void free_async (Arena* arena, void* mem);
     std::size_t wait_list_size ();
@@ -101,6 +111,25 @@ public:
     static sycl::queue& streamQueue () noexcept { return *(gpuStream().queue); }
     static sycl::queue& streamQueue (int i) noexcept { return *(gpu_stream_pool[i].getStream().queue); }
 #endif
+    /**
+     * \brief Kokkos execution space instance of the current AMReX GPU stream.
+     *
+     * Work submitted to this instance is ordered with AMReX kernels
+     * launched on the current stream (Gpu::gpuStream()).
+     */
+    static KokkosExecSpace const& kokkosExecSpace () noexcept {
+        if (!external_stream_stack.empty()) {
+            AMREX_ASSERT(external_stream_stack.back().manager != nullptr);
+            return external_stream_stack.back().manager->getExecSpace();
+        } else {
+            int tid = OpenMP::get_thread_num();
+            return gpu_stream_pool[gpu_stream_index[tid]].getExecSpace();
+        }
+    }
+    //! Kokkos execution space instance of AMReX GPU stream `i`
+    static KokkosExecSpace const& kokkosExecSpace (int i) noexcept {
+        return gpu_stream_pool[i].getExecSpace();
+    }
 #endif
 
     static int numGpuStreams () noexcept {
@@ -251,6 +280,9 @@ public:
 private:
 
     static void initialize_gpu (bool minimal);
+#if defined(AMREX_USE_GPU) && !defined(AMREX_USE_SYCL)
+    static void create_kokkos_streams ();
+#endif
 
     static AMREX_EXPORT int device_id;
     static AMREX_EXPORT int num_devices_used;
@@ -310,6 +342,22 @@ inline gpuStream_t
 gpuStream () noexcept
 {
     return Device::gpuStream();
+}
+#endif
+
+#ifdef AMREX_USE_GPU
+/**
+ * \brief Kokkos execution space instance of the current AMReX GPU stream.
+ *
+ * Use it to launch Kokkos kernels that are ordered with AMReX's own work:
+ * \code
+ *   Kokkos::parallel_for(Kokkos::RangePolicy<Gpu::KokkosExecSpace>(Gpu::kokkosExecSpace(), 0, n), f);
+ * \endcode
+ */
+inline KokkosExecSpace const&
+kokkosExecSpace () noexcept
+{
+    return Device::kokkosExecSpace();
 }
 #endif
 
@@ -436,46 +484,39 @@ private:
 
 #ifdef AMREX_USE_GPU
 
+/// \cond DOXYGEN_IGNORE
+namespace detail {
+    // Asynchronous copy of sz bytes on the current stream (Kokkos::deep_copy
+    // of unmanaged byte views)
+    template <typename DstSpace, typename SrcSpace>
+    void kokkos_memcpy_async (void* dst, const void* src, const std::size_t sz)
+    {
+        Kokkos::deep_copy(Device::kokkosExecSpace(),
+            Kokkos::View<char*, DstSpace, Kokkos::MemoryUnmanaged>(static_cast<char*>(dst), sz),
+            Kokkos::View<char const*, SrcSpace, Kokkos::MemoryUnmanaged>(static_cast<char const*>(src), sz));
+    }
+}
+/// \endcond
+
 inline void
 htod_memcpy_async (void* p_d, const void* p_h, const std::size_t sz) noexcept
 {
     if (sz == 0) { return; }
-#ifdef AMREX_USE_SYCL
-    auto& q = Device::streamQueue();
-    q.submit([&] (sycl::handler& h) { h.memcpy(p_d, p_h, sz); });
-#else
-    AMREX_HIP_OR_CUDA(
-        AMREX_HIP_SAFE_CALL(hipMemcpyAsync(p_d, p_h, sz, hipMemcpyHostToDevice, gpuStream()));,
-        AMREX_CUDA_SAFE_CALL(cudaMemcpyAsync(p_d, p_h, sz, cudaMemcpyHostToDevice, gpuStream())); )
-#endif
+    detail::kokkos_memcpy_async<KokkosDeviceMemSpace, Kokkos::HostSpace>(p_d, p_h, sz);
 }
 
 inline void
 dtoh_memcpy_async (void* p_h, const void* p_d, const std::size_t sz) noexcept
 {
     if (sz == 0) { return; }
-#ifdef AMREX_USE_SYCL
-    auto& q = Device::streamQueue();
-    q.submit([&] (sycl::handler& h) { h.memcpy(p_h, p_d, sz); });
-#else
-    AMREX_HIP_OR_CUDA(
-        AMREX_HIP_SAFE_CALL(hipMemcpyAsync(p_h, p_d, sz, hipMemcpyDeviceToHost, gpuStream()));,
-        AMREX_CUDA_SAFE_CALL(cudaMemcpyAsync(p_h, p_d, sz, cudaMemcpyDeviceToHost, gpuStream())); )
-#endif
+    detail::kokkos_memcpy_async<Kokkos::HostSpace, KokkosDeviceMemSpace>(p_h, p_d, sz);
 }
 
 inline void
 dtod_memcpy_async (void* p_d_dst, const void* p_d_src, const std::size_t sz) noexcept
 {
     if (sz == 0) { return; }
-#ifdef AMREX_USE_SYCL
-    auto& q = Device::streamQueue();
-    q.submit([&] (sycl::handler& h) { h.memcpy(p_d_dst, p_d_src, sz); });
-#else
-    AMREX_HIP_OR_CUDA(
-        AMREX_HIP_SAFE_CALL(hipMemcpyAsync(p_d_dst, p_d_src, sz, hipMemcpyDeviceToDevice, gpuStream()));,
-        AMREX_CUDA_SAFE_CALL(cudaMemcpyAsync(p_d_dst, p_d_src, sz, cudaMemcpyDeviceToDevice, gpuStream())); )
-#endif
+    detail::kokkos_memcpy_async<KokkosDeviceMemSpace, KokkosDeviceMemSpace>(p_d_dst, p_d_src, sz);
 }
 
 #else // AMREX_USE_GPU

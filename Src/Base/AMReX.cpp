@@ -1,6 +1,7 @@
 #include <AMReX_FileSystem.H>
 #include <AMReX_ParallelDescriptor.H>
 #include <AMReX.H>
+#include <AMReX_Kokkos.H>
 #include <AMReX_BaseFab.H>
 #include <AMReX_Box.H>
 #include <AMReX_BLProfiler.H>
@@ -566,6 +567,10 @@ amrex::Initialize (int& argc, char**& argv, bool build_parm_parse,
     Machine::Initialize();
 
     amrex::ignore_unused(a_device_id);
+#if defined(AMREX_USE_KOKKOS) && !defined(AMREX_USE_GPU)
+    // In GPU builds, Gpu::Device::Initialize initializes Kokkos on the selected device.
+    amrex::kokkos::Initialize(-1);
+#endif
 #ifdef AMREX_USE_GPU
     // Initialize after ParmParse so that we can read inputs.
     Gpu::Device::Initialize(initialization_by_init_minimal, a_device_id);
@@ -926,6 +931,10 @@ amrex::Finalize (amrex::AMReX* pamrex)
 
 #ifdef AMREX_USE_GPU
     Gpu::Device::Finalize();
+#endif
+
+#ifdef AMREX_USE_KOKKOS
+    amrex::kokkos::Finalize();
 #endif
 
 #ifdef AMREX_USE_OMP

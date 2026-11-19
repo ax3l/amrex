@@ -448,50 +448,26 @@ namespace amrex::Gpu {
             constexpr int nthreads_per_block = (sizeof(T) <= 64) ? 256 : 128;
             int nblocks = static_cast<int>((N+nthreads_per_block-1)/nthreads_per_block);
             std::size_t shared_mem_bytes = nthreads_per_block * sizeof(T);
-#ifdef AMREX_USE_SYCL
-            amrex::launch<nthreads_per_block>(nblocks, shared_mem_bytes, Gpu::gpuStream(),
-            [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler) noexcept
+            Gpu::team_launch<nthreads_per_block>(nblocks, shared_mem_bytes,
+            [=] AMREX_GPU_DEVICE (Gpu::KokkosTeamMember const& tm) noexcept
             {
-                Long i = handler.globalIdx();
-                Long blockDimx = handler.blockDim();
-                Long threadIdxx = handler.threadIdx();
-                Long blockIdxx = handler.blockIdx();
-                auto const shared_U = (U*)handler.sharedMemory();
-                auto const shared_T = (T*)shared_U;
-                if (i < N) {
-                    auto ga = new(shared_T+threadIdxx) T;
-                    f(*ga, i);
-                }
-                handler.syncThreads();
-                for (Long m = threadIdxx,
-                         mend = nU * amrex::min(blockDimx, N-blockDimx*blockIdxx);
-                     m < mend; m += blockDimx) {
-                    pu[blockDimx*blockIdxx*nU+m] = shared_U[m];
-                }
-            });
-#else
-            amrex::launch<nthreads_per_block>(nblocks, shared_mem_bytes, Gpu::gpuStream(),
-                          [=] AMREX_GPU_DEVICE () noexcept
-            {
-                Long blockDimx = blockDim.x;
-                Long threadIdxx = threadIdx.x;
-                Long blockIdxx = blockIdx.x;
+                Long blockDimx = nthreads_per_block;
+                Long threadIdxx = tm.team_rank();
+                Long blockIdxx = tm.league_rank();
                 Long i = blockDimx*blockIdxx + threadIdxx;
-                Gpu::SharedMemory<U> gsm;
-                auto const shared_U = gsm.dataPtr();
+                auto const shared_U = (U*)tm.team_scratch(0).get_shmem(shared_mem_bytes);
                 auto const shared_T = (T*)shared_U;
                 if (i < N) {
                     auto ga = new(shared_T+threadIdxx) T;
                     f(*ga, i);
                 }
-                __syncthreads();
+                tm.team_barrier();
                 for (Long m = threadIdxx,
                          mend = nU * amrex::min(blockDimx, N-blockDimx*blockIdxx);
                      m < mend; m += blockDimx) {
                     pu[blockDimx*blockIdxx*nU+m] = shared_U[m];
                 }
             });
-#endif
         }
 #endif
     }

@@ -346,20 +346,13 @@ struct ParReduceComp
         BoxIndexer const* pbx = fa.getParForInfo(nghost).getBoxes();
         const Math::FastDivmodU32 fdm_nb1(nb1);
 
-#ifdef AMREX_USE_SYCL
-        constexpr std::size_t shared_mem_bytes = sizeof(RT)
-            * std::max(Gpu::Device::warp_size, MT/Gpu::Device::warp_size);
-        amrex::launch<MT>(std::min(nblocks,maxblocks), shared_mem_bytes, stream,
-        [=] AMREX_GPU_DEVICE (Gpu::Handler const& gh) noexcept
+        amrex::ignore_unused(stream);
+        Gpu::team_launch<MT>(std::min(nblocks,maxblocks),
+        [=] AMREX_GPU_DEVICE (Gpu::KokkosTeamMember const& tm) noexcept
         {
-            Dim1 blockIdx {gh.blockIdx()};
-            Dim1 threadIdx{gh.threadIdx()};
-            Dim1 gridDim  {gh.gridDim()};
-#else
-        amrex::launch<MT>(std::min(nblocks,maxblocks), 0, stream,
-        [=] AMREX_GPU_DEVICE () noexcept
-        {
-#endif
+            Dim1 blockIdx {std::size_t(tm.league_rank())};
+            Dim1 threadIdx{std::size_t(tm.team_rank())};
+            Dim1 gridDim  {std::size_t(tm.league_size())};
             for (int b = int(blockIdx.x); b < nblocks; b += int(gridDim.x)) {
                 std::uint32_t n32, bb32;
                 fdm_nb1(n32, bb32, std::uint32_t(b));
@@ -378,27 +371,17 @@ struct ParReduceComp
                 }
                 RT& dst = ppart[b];
                 if (threadIdx.x == 0) { for_each_init<0, RT, Ops...>(dst); }
-#ifdef AMREX_USE_SYCL
-                for_each_parallel<0, RT, Ops...>(dst, t, gh);
-#else
-                for_each_parallel<0, RT, Ops...>(dst, t);
-#endif
+                team_for_each_parallel<RT, Ops...>(dst, t, tm);
             }
         });
 
         // Combine each key's partial results in a fixed order.
-#ifdef AMREX_USE_SYCL
-        amrex::launch<MT>(std::min(nkeys,maxblocks), shared_mem_bytes, stream,
-        [=] AMREX_GPU_DEVICE (Gpu::Handler const& gh) noexcept
+        Gpu::team_launch<MT>(std::min(nkeys,maxblocks),
+        [=] AMREX_GPU_DEVICE (Gpu::KokkosTeamMember const& tm) noexcept
         {
-            Dim1 blockIdx {gh.blockIdx()};
-            Dim1 threadIdx{gh.threadIdx()};
-            Dim1 gridDim  {gh.gridDim()};
-#else
-        amrex::launch<MT>(std::min(nkeys,maxblocks), 0, stream,
-        [=] AMREX_GPU_DEVICE () noexcept
-        {
-#endif
+            Dim1 blockIdx {std::size_t(tm.league_rank())};
+            Dim1 threadIdx{std::size_t(tm.team_rank())};
+            Dim1 gridDim  {std::size_t(tm.league_size())};
             for (int key = int(blockIdx.x); key < nkeys; key += int(gridDim.x)) {
                 int begin = 0;
                 int end = 0;
@@ -418,11 +401,7 @@ struct ParReduceComp
                 }
                 RT& dst = pr[key];
                 if (threadIdx.x == 0) { for_each_init<0, RT, Ops...>(dst); }
-#ifdef AMREX_USE_SYCL
-                for_each_parallel<0, RT, Ops...>(dst, t, gh);
-#else
-                for_each_parallel<0, RT, Ops...>(dst, t);
-#endif
+                team_for_each_parallel<RT, Ops...>(dst, t, tm);
             }
         });
 

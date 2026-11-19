@@ -312,18 +312,11 @@ void deterministic_fab_to_fab (Vector<Array4CopyTag<T0,T1>> const& a_tags, int s
     auto const* pntags = d_ntags.data();
     auto const nblocks = int(h_ntags.size()-1);
     constexpr auto nthreads = 256;
-    amrex::launch<nthreads>(nblocks, Gpu::gpuStream(),
-#ifdef AMREX_USE_SYCL
-        [=] AMREX_GPU_DEVICE (sycl::nd_item<1> const& item) noexcept
-        [[sycl::reqd_work_group_size(nthreads)]]
-#else
-        [=] AMREX_GPU_DEVICE () noexcept
-#endif
+    Gpu::team_launch<nthreads>(nblocks,
+        [=] AMREX_GPU_DEVICE (Gpu::KokkosTeamMember const& tm) noexcept
     {
-#ifdef AMREX_USE_SYCL
-        Dim1 blockIdx{item.get_group_linear_id()};
-        Dim1 threadIdx{item.get_local_linear_id()};
-#endif
+        Dim1 blockIdx{std::size_t(tm.league_rank())};
+        Dim1 threadIdx{std::size_t(tm.team_rank())};
 
         for (unsigned int itag = pntags[blockIdx.x]; itag < pntags[blockIdx.x+1]; ++itag) {
             auto const tag = ptag[itag];
@@ -346,11 +339,7 @@ void deterministic_fab_to_fab (Vector<Array4CopyTag<T0,T1>> const& a_tags, int s
             }
 
             if (itag+1 < pntags[blockIdx.x+1]) {
-#ifdef AMREX_USE_SYCL
-                sycl::group_barrier(item.get_group());
-#else
-                __syncthreads();
-#endif
+                tm.team_barrier();
             }
         }
     });

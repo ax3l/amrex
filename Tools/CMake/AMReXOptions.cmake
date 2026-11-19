@@ -282,6 +282,23 @@ print_option( AMReX_SIMD )
 option( AMReX_OMP  "Enable OpenMP" OFF)
 print_option( AMReX_OMP )
 
+#
+# Kokkos performance-portability layer  =======================================
+#
+# In GPU builds, AMReX's portability layer is implemented with Kokkos.
+if (AMReX_GPU_BACKEND STREQUAL NONE)
+   set(_amrex_kokkos_default OFF)
+else ()
+   set(_amrex_kokkos_default ON)
+endif ()
+option( AMReX_KOKKOS  "Use Kokkos as the on-node performance-portability layer" ${_amrex_kokkos_default})
+unset(_amrex_kokkos_default)
+print_option( AMReX_KOKKOS )
+if (NOT AMReX_GPU_BACKEND STREQUAL NONE AND NOT AMReX_KOKKOS)
+   message(FATAL_ERROR "AMReX_GPU_BACKEND=${AMReX_GPU_BACKEND} requires AMReX_KOKKOS=ON: "
+                       "AMReX's GPU portability layer is implemented with Kokkos.")
+endif ()
+
 
 #
 # AMReX components selection  ================================================

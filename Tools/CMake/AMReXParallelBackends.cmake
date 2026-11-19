@@ -66,6 +66,13 @@ endif ()
 
 #
 #
+#  Kokkos
+#
+#
+include(AMReXKokkos)
+
+#
+#
 # CUDA
 #
 #

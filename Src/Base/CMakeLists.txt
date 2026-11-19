@@ -212,6 +212,8 @@ foreach(D IN LISTS AMReX_SPACEDIM)
        AMReX_RungeKutta.H
        # GPU --------------------------------------------------------------------
        AMReX_Gpu.H
+       AMReX_Kokkos.H
+       AMReX_Kokkos.cpp
        AMReX_GpuQualifiers.H
        AMReX_GpuKernelInfo.H
        AMReX_GpuPrint.H
@@ -227,6 +229,7 @@ foreach(D IN LISTS AMReX_SPACEDIM)
        AMReX_GpuLaunchMacrosC.H
        AMReX_GpuLaunchMacrosC.nolint.H
        AMReX_GpuLaunchFunctsG.H
+       AMReX_GpuLaunchFunctsKokkos.H
        AMReX_GpuLaunchFunctsC.H
        AMReX_GpuLaunchFunctsSIMD.H
        AMReX_GpuError.H

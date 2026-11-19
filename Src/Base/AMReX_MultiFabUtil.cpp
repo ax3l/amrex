@@ -883,23 +883,11 @@ namespace amrex
                 int nblocks = n2dblocks * b.length(direction);
                 const Math::FastDivmodU32 fdm_n2dblocks(n2dblocks);
                 const Math::FastDivmodU32 fdm_n2dx(n2dx);
-#ifdef AMREX_USE_SYCL
-                std::size_t shared_mem_byte = sizeof(Real)
-                    * std::max(Gpu::Device::warp_size, AMREX_GPU_MAX_THREADS/Gpu::Device::warp_size);
-                amrex::launch<AMREX_GPU_MAX_THREADS>(nblocks, shared_mem_byte, Gpu::gpuStream(),
+                Gpu::handler_launch<AMREX_GPU_MAX_THREADS>(nblocks, 0,
                               [=] AMREX_GPU_DEVICE (Gpu::Handler const& h) noexcept
-#else
-                amrex::launch<AMREX_GPU_MAX_THREADS>(nblocks, Gpu::gpuStream(),
-                              [=] AMREX_GPU_DEVICE () noexcept
-#endif
                 {
-#ifdef AMREX_USE_SYCL
                     auto const blockIdxx = std::uint32_t(h.blockIdx());
                     auto const threadIdxx = int(h.threadIdx());
-#else
-                    auto const blockIdxx = std::uint32_t(blockIdx.x);
-                    auto const threadIdxx = int(threadIdx.x);
-#endif
                     std::uint32_t quot, rem;
                     fdm_n2dblocks(quot, rem, blockIdxx);
                     const int i1d = int(quot);
@@ -926,11 +914,7 @@ namespace amrex
                     }
                     for (int n = 0; n < ncomp; ++n) {
                         Real r = (i2d < n2d) ? fab(i,j,k,n+icomp) : Real(0.0);
-#ifdef AMREX_USE_SYCL
                         Gpu::deviceReduceSum_full(p+n+ncomp*(idir-dlo), r, h);
-#else
-                        Gpu::deviceReduceSum_full(p+n+ncomp*(idir-dlo), r);
-#endif
                     }
                 });
             }

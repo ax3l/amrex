@@ -2,7 +2,7 @@
 #define AMREX_SINGLE_BOX_CG_SOLVER_H_
 #include <AMReX_Config.H>
 
-#if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
+#ifdef AMREX_USE_GPU
 
 #include <AMReX_BaseFab.H>
 #include <AMReX_Print.H>
@@ -28,8 +28,8 @@ namespace detail {
 /**
  * \brief BiCGStab solver for a single Box that runs entirely on the GPU.
  *
- * This is currently available for CUDA and HIP only.  The return codes and
- * the verbose output follow MLCGSolver.
+ * This is available in GPU builds.  The return codes and the verbose output
+ * follow MLCGSolver.
  *
  * \param box region for solve
  * \param x solution with initial value already set to zero
@@ -88,8 +88,11 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
         auto const npts = indexer.numPts();
 
         // Initialize r and rh, and write one rnorm contribution per block.
-        amrex::launch<MT>(nblocks, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+        Gpu::handler_launch<MT>(nblocks, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
         {
+            [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+            [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+            [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
             auto const ipt = BoxIndexer::UInt(blockIdx.x)*blockDim.x + threadIdx.x;
             T rnorm = 0;
             if (ipt < npts) {
@@ -102,20 +105,23 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
                     rnorm = std::max(rnorm, std::abs(v));
                 }
             }
-            rnorm = Gpu::blockReduceMax<MT>(rnorm);
+            rnorm = Gpu::blockReduceMax(rnorm, handler);
             if (threadIdx.x == 0) {
                 reduce[blockIdx.x] = rnorm;
             }
         });
 
         // Finish the rnorm reduction with one block and initialize solver state.
-        amrex::launch<MT>(1, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+        Gpu::handler_launch<MT>(1, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
         {
+            [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+            [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+            [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
             T rnorm = 0;
             for (auto iblock = threadIdx.x; iblock < nblocks; iblock += blockDim.x) {
                 rnorm = std::max(rnorm, reduce[iblock]);
             }
-            rnorm = Gpu::blockReduceMax<MT>(rnorm);
+            rnorm = Gpu::blockReduceMax(rnorm, handler);
             if (threadIdx.x == 0) {
                 scalar[s_rnorm0] = rnorm;
                 scalar[s_rnorm] = rnorm;
@@ -132,8 +138,11 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
         int iter = 1;
         for (; iter <= maxiter; ++iter) {
             // rho = dot(rh,r), with one partial sum per block.
-            amrex::launch<MT>(nblocks, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+            Gpu::handler_launch<MT>(nblocks, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
             {
+                [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+                [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+                [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
                 if (*active == 0) { return; }
                 auto const ipt = BoxIndexer::UInt(blockIdx.x)*blockDim.x + threadIdx.x;
                 T rho = 0;
@@ -144,20 +153,23 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
                                        a(cell,i_r*ncomp+n));
                     }
                 }
-                rho = Gpu::blockReduceSum<MT>(rho);
+                rho = Gpu::blockReduceSum(rho, handler);
                 if (threadIdx.x == 0) {
                     reduce[blockIdx.x] = rho;
                 }
             });
 
-            amrex::launch<MT>(1, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+            Gpu::handler_launch<MT>(1, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
             {
+                [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+                [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+                [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
                 if (*active == 0) { return; }
                 T rho = 0;
                 for (auto iblock = threadIdx.x; iblock < nblocks; iblock += blockDim.x) {
                     rho += reduce[iblock];
                 }
-                rho = Gpu::blockReduceSum<MT>(rho);
+                rho = Gpu::blockReduceSum(rho, handler);
                 if (threadIdx.x == 0) {
                     scalar[s_rho] = rho;
                     if (rho == 0) {
@@ -172,8 +184,11 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
 
             // Update p.  This is separate from applying the operator so that
             // all p values are globally visible before lp.apply reads them.
-            amrex::launch<MT>(nblocks, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+            Gpu::handler_launch<MT>(nblocks, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
             {
+                [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+                [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+                [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
                 if (*active == 0) { return; }
                 auto const ipt = BoxIndexer::UInt(blockIdx.x)*blockDim.x + threadIdx.x;
                 if (ipt < npts) {
@@ -194,8 +209,11 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
             // increases register pressure for complex operators such as EB with
             // variable coefficients.
             // v = A p.
-            amrex::launch<MT>(nblocks, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+            Gpu::handler_launch<MT>(nblocks, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
             {
+                [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+                [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+                [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
                 if (*active == 0) { return; }
                 auto const ipt = BoxIndexer::UInt(blockIdx.x)*blockDim.x + threadIdx.x;
                 if (ipt < npts) {
@@ -208,8 +226,11 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
             });
 
             // rhTv = dot(rh,v).
-            amrex::launch<MT>(nblocks, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+            Gpu::handler_launch<MT>(nblocks, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
             {
+                [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+                [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+                [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
                 if (*active == 0) { return; }
                 auto const ipt = BoxIndexer::UInt(blockIdx.x)*blockDim.x + threadIdx.x;
                 T rhTv = 0;
@@ -220,20 +241,23 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
                                         a(cell,i_v*ncomp+n));
                     }
                 }
-                rhTv = Gpu::blockReduceSum<MT>(rhTv);
+                rhTv = Gpu::blockReduceSum(rhTv, handler);
                 if (threadIdx.x == 0) {
                     reduce[blockIdx.x] = rhTv;
                 }
             });
 
-            amrex::launch<MT>(1, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+            Gpu::handler_launch<MT>(1, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
             {
+                [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+                [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+                [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
                 if (*active == 0) { return; }
                 T rhTv = 0;
                 for (auto iblock = threadIdx.x; iblock < nblocks; iblock += blockDim.x) {
                     rhTv += reduce[iblock];
                 }
-                rhTv = Gpu::blockReduceSum<MT>(rhTv);
+                rhTv = Gpu::blockReduceSum(rhTv, handler);
                 if (threadIdx.x == 0) {
                     if (rhTv != 0) {
                         scalar[s_alpha] = scalar[s_rho] / rhTv;
@@ -245,8 +269,11 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
             });
 
             // x += alpha*p; r -= alpha*v; rnorm = norminf(r).
-            amrex::launch<MT>(nblocks, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+            Gpu::handler_launch<MT>(nblocks, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
             {
+                [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+                [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+                [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
                 if (*active == 0) { return; }
                 auto const ipt = BoxIndexer::UInt(blockIdx.x)*blockDim.x + threadIdx.x;
                 T rnorm = 0;
@@ -258,20 +285,23 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
                         rnorm = std::max(rnorm, std::abs(a(cell,i_r*ncomp+n)));
                     }
                 }
-                rnorm = Gpu::blockReduceMax<MT>(rnorm);
+                rnorm = Gpu::blockReduceMax(rnorm, handler);
                 if (threadIdx.x == 0) {
                     reduce[blockIdx.x] = rnorm;
                 }
             });
 
-            amrex::launch<MT>(1, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+            Gpu::handler_launch<MT>(1, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
             {
+                [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+                [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+                [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
                 if (*active == 0) { return; }
                 T rnorm = 0;
                 for (auto iblock = threadIdx.x; iblock < nblocks; iblock += blockDim.x) {
                     rnorm = std::max(rnorm, reduce[iblock]);
                 }
-                rnorm = Gpu::blockReduceMax<MT>(rnorm);
+                rnorm = Gpu::blockReduceMax(rnorm, handler);
                 if (threadIdx.x == 0) {
                     scalar[s_rnorm] = rnorm;
                     if (rnorm < eps_rel*scalar[s_rnorm0] || rnorm < eps_abs) {
@@ -283,8 +313,11 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
             // Keep applying the operator separate from the reduction for the same
             // register-pressure reason as above.
             // t = A r.
-            amrex::launch<MT>(nblocks, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+            Gpu::handler_launch<MT>(nblocks, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
             {
+                [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+                [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+                [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
                 if (*active == 0) { return; }
                 auto const ipt = BoxIndexer::UInt(blockIdx.x)*blockDim.x + threadIdx.x;
                 if (ipt < npts) {
@@ -297,8 +330,11 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
             });
 
             // t0 = dot(t,t) and t1 = dot(t,r).
-            amrex::launch<MT>(nblocks, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+            Gpu::handler_launch<MT>(nblocks, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
             {
+                [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+                [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+                [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
                 if (*active == 0) { return; }
                 auto const ipt = BoxIndexer::UInt(blockIdx.x)*blockDim.x + threadIdx.x;
                 T t0 = 0;
@@ -312,16 +348,19 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
                                       a(cell,i_r*ncomp+n));
                     }
                 }
-                t0 = Gpu::blockReduceSum<MT>(t0);
-                t1 = Gpu::blockReduceSum<MT>(t1);
+                t0 = Gpu::blockReduceSum(t0, handler);
+                t1 = Gpu::blockReduceSum(t1, handler);
                 if (threadIdx.x == 0) {
                     reduce[blockIdx.x] = t0;
                     reduce[nblocks+blockIdx.x] = t1;
                 }
             });
 
-            amrex::launch<MT>(1, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+            Gpu::handler_launch<MT>(1, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
             {
+                [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+                [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+                [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
                 if (*active == 0) { return; }
                 T t0 = 0;
                 T t1 = 0;
@@ -329,8 +368,8 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
                     t0 += reduce[iblock];
                     t1 += reduce[nblocks+iblock];
                 }
-                t0 = Gpu::blockReduceSum<MT>(t0);
-                t1 = Gpu::blockReduceSum<MT>(t1);
+                t0 = Gpu::blockReduceSum(t0, handler);
+                t1 = Gpu::blockReduceSum(t1, handler);
                 if (threadIdx.x == 0) {
                     if (t0 != 0) {
                         scalar[s_omega] = t1/t0;
@@ -342,8 +381,11 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
             });
 
             // x += omega*r; r -= omega*t; rnorm = norminf(r).
-            amrex::launch<MT>(nblocks, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+            Gpu::handler_launch<MT>(nblocks, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
             {
+                [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+                [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+                [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
                 if (*active == 0) { return; }
                 auto const ipt = BoxIndexer::UInt(blockIdx.x)*blockDim.x + threadIdx.x;
                 T rnorm = 0;
@@ -355,20 +397,23 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
                         rnorm = std::max(rnorm, std::abs(a(cell,i_r*ncomp+n)));
                     }
                 }
-                rnorm = Gpu::blockReduceMax<MT>(rnorm);
+                rnorm = Gpu::blockReduceMax(rnorm, handler);
                 if (threadIdx.x == 0) {
                     reduce[blockIdx.x] = rnorm;
                 }
             });
 
-            amrex::launch<MT>(1, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+            Gpu::handler_launch<MT>(1, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
             {
+                [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+                [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+                [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
                 if (*active == 0) { return; }
                 T rnorm = 0;
                 for (auto iblock = threadIdx.x; iblock < nblocks; iblock += blockDim.x) {
                     rnorm = std::max(rnorm, reduce[iblock]);
                 }
-                rnorm = Gpu::blockReduceMax<MT>(rnorm);
+                rnorm = Gpu::blockReduceMax(rnorm, handler);
                 if (threadIdx.x == 0) {
                     scalar[s_rnorm] = rnorm;
                     if (rnorm < eps_rel*scalar[s_rnorm0] || rnorm < eps_abs) {
@@ -388,8 +433,11 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
         }
 
         // Match the return and solution-reset behavior of the one-block path.
-        amrex::launch<MT>(1, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+        Gpu::handler_launch<MT>(1, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
         {
+            [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+            [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+            [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
             if (threadIdx.x == 0) {
                 T const rnorm = scalar[s_rnorm];
                 T const rnorm0 = scalar[s_rnorm0];
@@ -411,8 +459,11 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
             }
         });
 
-        amrex::launch<MT>(nblocks, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+        Gpu::handler_launch<MT>(nblocks, 0, [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
         {
+            [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+            [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+            [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
             if (*active == 0) {
                 auto const ipt = BoxIndexer::UInt(blockIdx.x)*blockDim.x + threadIdx.x;
                 if (ipt < npts) {
@@ -430,8 +481,11 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
     }
     else
     {
-        amrex::launch<MT>(1, Gpu::gpuStream(), [=] AMREX_GPU_DEVICE ()
+        Gpu::handler_launch<MT>(1, 2*sizeof(T), [=] AMREX_GPU_DEVICE (Gpu::Handler const& handler)
         {
+            [[maybe_unused]] Dim1 const blockIdx {handler.blockIdx()};
+            [[maybe_unused]] Dim1 const threadIdx{handler.threadIdx()};
+            [[maybe_unused]] Dim1 const blockDim {handler.blockDim()};
             auto npts = static_cast<unsigned int>(indexer.numPts());
 
             T rnorm = 0;
@@ -446,12 +500,12 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
                 }
             }
 
-            rnorm = Gpu::blockReduceMax<MT>(rnorm);
+            rnorm = Gpu::blockReduceMax(rnorm, handler);
 
-            __shared__ T shared_scalar[2];
+            T* const shared_scalar = static_cast<T*>(handler.sharedMemory());
 
             if (threadIdx.x == 0) { shared_scalar[0] = rnorm; }
-            __syncthreads();
+            handler.syncThreads();
             T const rnorm0 = shared_scalar[0];
 
             if (rnorm0 == 0 || rnorm0 < eps_abs) {
@@ -475,10 +529,10 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
                         rho += lp.xdoty(cell, n, a(cell,i_rh*ncomp+n), a(cell,i_r*ncomp+n));
                     }
                 }
-                rho = Gpu::blockReduceSum<MT>(rho);
+                rho = Gpu::blockReduceSum(rho, handler);
 
                 if (threadIdx.x == 0) { shared_scalar[0] = rho; }
-                __syncthreads();
+                handler.syncThreads();
                 rho = shared_scalar[0];
 
                 if (rho == 0) {
@@ -504,7 +558,7 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
                     }
                 }
 
-                __syncthreads(); // needed for lp.apply
+                handler.syncThreads(); // needed for lp.apply
 
                 T rhTv = 0;
                 for (auto ipt = threadIdx.x; ipt < npts; ipt += blockDim.x) {
@@ -515,10 +569,10 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
                         rhTv += lp.xdoty(cell, n, a(cell,i_rh*ncomp+n), a(cell,i_v*ncomp+n));
                     }
                 }
-                rhTv = Gpu::blockReduceSum<MT>(rhTv);
+                rhTv = Gpu::blockReduceSum(rhTv, handler);
 
                 if (threadIdx.x == 0) { shared_scalar[0] = rhTv; }
-                __syncthreads();
+                handler.syncThreads();
                 rhTv = shared_scalar[0];
 
                 if (rhTv != 0) {
@@ -537,10 +591,10 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
                         rnorm = std::max(rnorm, std::abs(a(cell,i_r*ncomp+n)));
                     }
                 }
-                rnorm = Gpu::blockReduceMax<MT>(rnorm);
+                rnorm = Gpu::blockReduceMax(rnorm, handler);
 
                 if (threadIdx.x == 0) { shared_scalar[0] = rnorm; }
-                __syncthreads();
+                handler.syncThreads();
                 rnorm = shared_scalar[0];
 
                 if ( rnorm < eps_rel*rnorm0 || rnorm < eps_abs ) { break; }
@@ -555,14 +609,14 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
                         t1 += lp.xdoty(cell, n, a(cell,i_t*ncomp+n), a(cell,i_r*ncomp+n));
                     }
                 }
-                t0 = Gpu::blockReduceSum<MT>(t0);
-                t1 = Gpu::blockReduceSum<MT>(t1);
+                t0 = Gpu::blockReduceSum(t0, handler);
+                t1 = Gpu::blockReduceSum(t1, handler);
 
                 if (threadIdx.x == 0) {
                     shared_scalar[0] = t0;
                     shared_scalar[1] = t1;
                 }
-                __syncthreads();
+                handler.syncThreads();
                 t0 = shared_scalar[0];
                 t1 = shared_scalar[1];
 
@@ -582,10 +636,10 @@ int bicgstab_solve (Box const& box, BaseFab<T>& x, BaseFab<T> const& b, LP const
                         rnorm = std::max(rnorm, std::abs(a(cell,i_r*ncomp+n)));
                     }
                 }
-                rnorm = Gpu::blockReduceMax<MT>(rnorm);
+                rnorm = Gpu::blockReduceMax(rnorm, handler);
 
                 if (threadIdx.x == 0) { shared_scalar[0] = rnorm; }
-                __syncthreads();
+                handler.syncThreads();
                 rnorm = shared_scalar[0];
 
                 if ( rnorm < eps_rel*rnorm0 || rnorm < eps_abs ) { break; }
