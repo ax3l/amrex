@@ -2,6 +2,7 @@
 #include <AMReX_FBI.H>
 #include <AMReX_PCI.H>
 #include <AMReX_FBUnpackOnArrival.H>
+#include <AMReX_FBNccl.H>
 
 /**
  * \file AMReX_FabArrayCommI.H
@@ -119,6 +120,21 @@ FabArray<FAB>::FBEP_nowait (int scomp, int ncomp, const IntVect& nghost,
         // No work to do.
         return;
     }
+
+#if defined(AMREX_USE_NCCL) && defined(AMREX_FB_UNPACK_ON_ARRIVAL)
+    // Experimental NCCL paths (amrex.nccl.fb_mode): same kernels and
+    // conditions as unpack on arrival, communication without MPI.
+    if (NCCL::fbMode() != NCCL::FBMode::off && !deterministic &&
+        ParallelContext::NProcsSub() == ParallelDescriptor::NProcs() &&
+        Gpu::inLaunchRegion() && !Gpu::inGraphRegion() &&
+        (sumboundary ? (amrex::IsAddAssignable<value_type>::value &&
+                        (TheFB.m_threadsafe_rcv || amrex::HasAtomicAdd<value_type>::value))
+                     : (TheFB.m_threadsafe_rcv || amrex::IsStoreAtomic<value_type>::value)))
+    {
+        FB_nccl_nowait<BUF>(TheFB, scomp, ncomp, sumboundary);
+        return;
+    }
+#endif
 
 #ifdef AMREX_FB_UNPACK_ON_ARRIVAL
     // Unpack on arrival: GPU-aware MPI, no CUDA graph, not deterministic.
@@ -258,6 +274,13 @@ FabArray<FAB>::FillBoundary_finish ()
     BL_PROFILE_SYNC_STOP();
 
     if (!fbd) { return; }
+
+#if defined(AMREX_USE_NCCL) && defined(AMREX_FB_UNPACK_ON_ARRIVAL)
+    if (fbd->nccl_mode != 0) {
+        FB_nccl_finish<BUF>();
+        return;
+    }
+#endif
 
 #ifdef AMREX_FB_UNPACK_ON_ARRIVAL
     if (fbd->oa_meta) {

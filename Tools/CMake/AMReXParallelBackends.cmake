@@ -30,6 +30,22 @@ endif ()
 
 #
 #
+#  NCCL (experimental)
+#
+#
+if (AMReX_NCCL)
+   find_path(AMReX_NCCL_INCLUDE_DIR nccl.h
+      HINTS ${NCCL_ROOT} ENV NCCL_ROOT PATH_SUFFIXES include REQUIRED)
+   find_library(AMReX_NCCL_LIBRARY nccl
+      HINTS ${NCCL_ROOT} ENV NCCL_ROOT PATH_SUFFIXES lib lib64 REQUIRED)
+   foreach(D IN LISTS AMReX_SPACEDIM)
+       target_include_directories(amrex_${D}d SYSTEM PUBLIC $<BUILD_INTERFACE:${AMReX_NCCL_INCLUDE_DIR}>)
+       target_link_libraries(amrex_${D}d PUBLIC $<BUILD_INTERFACE:${AMReX_NCCL_LIBRARY}>)
+   endforeach()
+endif ()
+
+#
+#
 #  VIR-SIMD
 #
 #

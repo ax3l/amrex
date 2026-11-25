@@ -138,6 +138,12 @@ struct FBOnArrivalMeta {
     TagVector<CommSendBufTag<value_type>> send_tv;
     TagVector<CommRecvBufTag<value_type>> recv_tv;
     Vector<int> rcv_warp_begin; // first warp of each message in recv_tv, plus the total
+
+#ifdef AMREX_USE_NCCL
+    //! NCCL mode 2: pack tags whose poff is the address in the receiving GPU.
+    TagVector<CommSendBufTag<value_type>> send_tv_lsa;
+    bool lsa_ready = false;
+#endif
 };
 #endif
 
@@ -165,6 +171,10 @@ struct FBData {
     bool                deterministic = false;
 #ifdef AMREX_FB_UNPACK_ON_ARRIVAL
     FBOnArrivalMeta<FAB>* oa_meta = nullptr;
+#endif
+#ifdef AMREX_USE_NCCL
+    int nccl_mode = 0; //!< NCCL::FBMode of this exchange, 0 for MPI
+    Vector<unsigned long long> nccl_expected; //!< message numbers awaited from the senders
 #endif
 };
 
@@ -1744,6 +1754,17 @@ public:
 
     template <typename BUF>
     void FB_on_arrival_finish ();
+#endif
+
+#if defined(AMREX_USE_NCCL) && defined(AMREX_FB_UNPACK_ON_ARRIVAL)
+    template <typename BUF>
+    void FB_nccl_lsa_meta (const FB& TheFB, int ncomp, FBOnArrivalMeta<FAB>& e);
+
+    template <typename BUF>
+    void FB_nccl_nowait (const FB& TheFB, int scomp, int ncomp, bool sumboundary);
+
+    template <typename BUF>
+    void FB_nccl_finish ();
 #endif
 
 #endif

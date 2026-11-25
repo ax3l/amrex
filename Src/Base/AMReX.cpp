@@ -9,6 +9,7 @@
 #include <AMReX_Random.H>
 #include <AMReX_Print.H>
 #include <AMReX_Arena.H>
+#include <AMReX_NCCL.H>
 #include <AMReX_BLBackTrace.H>
 #include <AMReX_CrtReport.H>
 #include <AMReX_MemPool.H>
@@ -686,6 +687,10 @@ amrex::Initialize (int& argc, char**& argv, bool build_parm_parse,
     Arena::Initialize(initialization_by_init_minimal);
     amrex_mempool_init();
 
+#ifdef AMREX_USE_NCCL
+    NCCL::Initialize();
+#endif
+
     //
     // Initialize random seed after we're running in parallel.
     //
@@ -896,6 +901,10 @@ amrex::Finalize (amrex::AMReX* pamrex)
 #endif
 
     BL_TINY_PROFILE_MEMORYFINALIZE();
+
+#ifdef AMREX_USE_NCCL
+    NCCL::Finalize();
+#endif
 
     amrex_mempool_finalize();
     Arena::Finalize();
