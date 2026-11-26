@@ -138,6 +138,15 @@ struct FBOnArrivalMeta {
     TagVector<CommSendBufTag<value_type>> send_tv;
     TagVector<CommRecvBufTag<value_type>> recv_tv;
     Vector<int> rcv_warp_begin; // first warp of each message in recv_tv, plus the total
+
+#ifdef AMREX_USE_NVSHMEM
+    //! NVSHMEM paths: pack tags whose poff is the destination address, in the
+    //! receiving GPU or in the local send window.
+    TagVector<CommSendBufTag<value_type>> send_tv_shm;
+    Vector<int>         shm_is_put; //!< per send message: put from the send window (1) or written directly (0)
+    Vector<std::size_t> shm_roff;   //!< per send message: offset in the receiver's window
+    bool shm_ready = false;
+#endif
 };
 #endif
 
@@ -165,6 +174,10 @@ struct FBData {
     bool                deterministic = false;
 #ifdef AMREX_FB_UNPACK_ON_ARRIVAL
     FBOnArrivalMeta<FAB>* oa_meta = nullptr;
+#endif
+#ifdef AMREX_USE_NVSHMEM
+    int shm_mode = 0; //!< NVSHMEM::FBMode of this exchange, 0 for MPI
+    Vector<std::uint64_t> shm_expected; //!< message numbers awaited from the senders
 #endif
 };
 
@@ -1744,6 +1757,17 @@ public:
 
     template <typename BUF>
     void FB_on_arrival_finish ();
+#endif
+
+#if defined(AMREX_USE_NVSHMEM) && defined(AMREX_FB_UNPACK_ON_ARRIVAL)
+    template <typename BUF>
+    void FB_shm_meta (const FB& TheFB, int ncomp, FBOnArrivalMeta<FAB>& e);
+
+    template <typename BUF>
+    void FB_shm_nowait (const FB& TheFB, int scomp, int ncomp, bool sumboundary);
+
+    template <typename BUF>
+    void FB_shm_finish ();
 #endif
 
 #endif

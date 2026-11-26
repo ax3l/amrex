@@ -30,6 +30,27 @@ endif ()
 
 #
 #
+#  NVSHMEM (experimental)
+#
+#
+if (AMReX_NVSHMEM)
+   find_path(AMReX_NVSHMEM_INCLUDE_DIR nvshmem.h
+      HINTS ${NVSHMEM_ROOT} ENV NVSHMEM_ROOT PATH_SUFFIXES include REQUIRED)
+   find_library(AMReX_NVSHMEM_HOST_LIBRARY nvshmem_host
+      HINTS ${NVSHMEM_ROOT} ENV NVSHMEM_ROOT PATH_SUFFIXES lib lib64 REQUIRED)
+   find_library(AMReX_NVSHMEM_DEVICE_LIBRARY nvshmem_device
+      HINTS ${NVSHMEM_ROOT} ENV NVSHMEM_ROOT PATH_SUFFIXES lib lib64 REQUIRED)
+   foreach(D IN LISTS AMReX_SPACEDIM)
+       target_include_directories(amrex_${D}d SYSTEM PUBLIC $<BUILD_INTERFACE:${AMReX_NVSHMEM_INCLUDE_DIR}>)
+       # device code calls NVSHMEM: the static device library goes into the device link
+       target_link_libraries(amrex_${D}d PUBLIC
+          $<BUILD_INTERFACE:${AMReX_NVSHMEM_HOST_LIBRARY}>
+          $<BUILD_INTERFACE:${AMReX_NVSHMEM_DEVICE_LIBRARY}>)
+   endforeach()
+endif ()
+
+#
+#
 #  VIR-SIMD
 #
 #

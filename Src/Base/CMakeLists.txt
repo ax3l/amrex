@@ -163,6 +163,9 @@ foreach(D IN LISTS AMReX_SPACEDIM)
        AMReX_FabArrayCommI.H
        AMReX_FBI.H
        AMReX_FBUnpackOnArrival.H
+       AMReX_FBNvshmem.H
+       AMReX_NVSHMEM.H
+       AMReX_NVSHMEM.cpp
        AMReX_PCI.H
        AMReX_FabArrayUtility.H
        AMReX_LayoutData.H

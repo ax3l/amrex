@@ -276,6 +276,11 @@ cmake_dependent_option( AMReX_MPI_THREAD_MULTIPLE
    "AMReX_MPI" OFF)
 print_option( AMReX_MPI_THREAD_MULTIPLE )
 
+cmake_dependent_option( AMReX_NVSHMEM
+   "Enable experimental NVIDIA NVSHMEM communication paths (needs NVSHMEM_ROOT)"  OFF
+   "AMReX_MPI;AMReX_CUDA" OFF)
+print_option( AMReX_NVSHMEM )
+
 option( AMReX_SIMD  "Enable SIMD Primitives" OFF)
 print_option( AMReX_SIMD )
 
